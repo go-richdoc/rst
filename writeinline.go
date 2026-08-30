@@ -20,10 +20,10 @@ func (w *writer) writeInlines(nodes []richdoc.Inline) string {
 
 // writeInline renders one inline node. Several richdoc inlines have no
 // native reST construct at all (an inline [richdoc.Image], a hard
-// [richdoc.LineBreak] inside an ordinary paragraph, an [richdoc.Anchor]'s
-// id, an unresolved [richdoc.CrossRef] target with no matching hyperlink
-// target elsewhere in the same document) — each is documented at its case
-// below with what this writer does instead and why.
+// [richdoc.LineBreak] inside an ordinary paragraph, a point [richdoc.Anchor]
+// with no visible text, an unresolved [richdoc.CrossRef] target with no
+// matching hyperlink target elsewhere in the same document) — each is
+// documented at its case below with what this writer does instead and why.
 func (w *writer) writeInline(n richdoc.Inline) string {
 	switch v := n.(type) {
 	case richdoc.Text:
@@ -66,16 +66,31 @@ func (w *writer) writeInline(n richdoc.Inline) string {
 		w.footnotes = append(w.footnotes, v)
 		return "[" + strconv.Itoa(len(w.footnotes)) + "]_"
 	case richdoc.Anchor:
-		// reST's inline-internal-target syntax ("_`text`") has no reader in
-		// docutils/rst yet (see its README's "Not yet ported" list), so
-		// emitting it here couldn't round-trip through this package's own
-		// Parse; rendering just the marked text, id dropped, matches
-		// github.com/go-richdoc/markdown's Write for the same reason
-		// (CommonMark has no anchor syntax either).
-		return w.writeInlines(v.Inlines)
+		return writeAnchor(v)
 	}
 	// richdoc.Inline is closed; the only remaining variant is CrossRef.
 	return writeCrossRef(n.(richdoc.CrossRef))
+}
+
+// writeAnchor renders a richdoc.Anchor as reST's inline internal target,
+// "_`text`" (docutils/rst v0.4.0+ reads this back, see convertInlineElement
+// in parse.go), when it has visible content — that syntax requires
+// non-empty backtick-quoted text, so a point anchor (Inlines empty, per
+// richdoc's own doc comment) has no reST equivalent at all and degrades to
+// nothing, same as before. NOTE this is a lossy round-trip when Anchor.ID
+// doesn't already match the normalized form of its own visible text (the
+// common case for one this package's own Parse produced, since it always
+// sets ID from that same text) — reST resolves an inline target by its
+// VISIBLE TEXT, not by an externally supplied id, so a cross-converter
+// Anchor whose id is a separate stable slug re-resolves under a different
+// name on reparse. Still strictly better than the old behavior (dropping
+// the anchor construct entirely, which left nothing any reference could
+// ever resolve to).
+func writeAnchor(a richdoc.Anchor) string {
+	if len(a.Inlines) == 0 {
+		return ""
+	}
+	return "_`" + plainText(a.Inlines) + "`"
 }
 
 func writeLink(l richdoc.Link) string {

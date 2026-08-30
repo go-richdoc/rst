@@ -331,10 +331,18 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		return []richdoc.Inline{richdoc.Code{Value: doctree.AsText(el)}}
 	case doctree.TagMath:
 		// docutils/rst v0.3.0+ gives :math: its own dedicated node (see
-		// its README); convertRole's role=="math" case below still covers
-		// content from an older docutils build or any other TagInline
-		// source that happens to use that role name.
+		// its README) rather than routing it through TagInline like every
+		// other role, so it's handled here, not in convertRole.
 		return []richdoc.Inline{richdoc.Math{TeX: doctree.AsText(el)}}
+	case doctree.TagTarget:
+		// Reached only for an INLINE internal target ("_`text`",
+		// docutils/rst v0.4.0+) — a block-level hyperlink target never
+		// appears as a paragraph's child, so it never reaches inline
+		// conversion at all (see convertBlockNode's TagTarget case, which
+		// drops it: its consuming references already carry a resolved
+		// refuri directly). An inline target's "name" attr is exactly
+		// richdoc.Anchor's ID.
+		return []richdoc.Inline{richdoc.Anchor{ID: el.Attr("name"), Inlines: c.convertInlines(el.Children)}}
 	case doctree.TagTitleReference:
 		// The nearest common rendering (italics) for a construct richdoc has
 		// no dedicated node for; see the package doc comment.

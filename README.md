@@ -50,12 +50,13 @@ separate reference tool (no tectonic-style external compiler, no Python
 | `emphasis` / `strong` / `literal` | `Emph` / `Strong` / `Code` |
 | `title_reference` | `Emph` (the nearest common styling; richdoc has no dedicated node) |
 | `math` (docutils' dedicated `:math:` node, not routed through `inline` at all) | `Math` |
-| `reference` with a resolved `refuri` | `Link`; unresolved falls back to plain inline content |
+| an INLINE `target` (`` _`text` ``, docutils/rst v0.4.0+ — a target inside a paragraph, as opposed to a block-level hyperlink target, see below) | `Anchor` — its "name" attribute (derived from its own visible text) becomes `Anchor.ID` |
+| `reference` with a resolved `refuri` | `Link`; unresolved falls back to plain inline content; a resolved same-document anchor (`refuri` starting with `#`, from an inline internal target above) is still just a `Link` — richdoc has no distinct "internal cross-reference by name" inline type of its own besides `CrossRef`, which this package reserves for its own `Write` output (see below) |
 | `substitution_reference` | resolved against its `substitution_definition`'s value and inlined directly — a real resolution this package's sibling docutils/html and docutils/latex writers deliberately don't perform; an orphan reference falls back to its bare name |
 | `footnote_reference` / `citation_reference` | resolved against its definition and inlined as a `Footnote` at the reference site — both reST forms are self-contained label+body constructs, unlike LaTeX's external-bibliography `\cite`; an unresolvable reference (most often reST's own auto-numbered `[#]_`/symbol `[*]_` forms, which `docutils/rst` never assigns a name) falls back to a verbatim `RawInline` |
 | `:strike:` role | `Strikethrough` — this package's own convention (reST has no native strikethrough at all); `Write` emits the same role name back |
 | leading field list (the document's very first block) | `Document.Meta` |
-| a hyperlink `target`, a `substitution_definition` | dropped — invisible bookkeeping whose consuming references are already resolved by the time this package sees the tree |
+| a BLOCK-level hyperlink `target`, a `substitution_definition` | dropped — invisible bookkeeping whose consuming references are already resolved by the time this package sees the tree |
 
 **Falls back to `RawBlock`/`RawInline` with Format `"rst"`** (so nothing is
 silently lost, resynthesized from parsed structure rather than a verbatim
@@ -84,6 +85,7 @@ marked" fact is lost.
 | `RawBlock` / `RawInline` | Format `""` or `"rst"` passes through verbatim; any other format is dropped (a converter, not a filter — foreign raw content isn't this package's to interpret) |
 | `Emph` / `Strong` / `Code` / `Strikethrough` / `Math` | `*x*` / `**x**` / `` ``x`` `` / `:strike:`x`` / `:math:`x`` |
 | `Link` | a bare URL round-trips through standalone-URI auto-recognition with no markup at all; otherwise `` `text <url>`_ `` |
+| `Anchor` with visible text | `` _`text` ``, reST's inline internal target — `Parse` reads this back (see above); a point anchor (no visible text) has no reST equivalent and renders to nothing |
 | `Footnote` | an inline `[n]_` reference; its body is collected and emitted as a trailing `.. [n] ...` definition, numbered in reference order — the same accumulate-then-emit pattern `markdown`'s Write uses for `[^n]: ...` |
 | `CrossRef` (label) | `` `text <target_>`_ ``, this package's own embedded-alias convention; (citation) a bare `[target]_` — reST citations are self-contained (unlike LaTeX's external-bibliography `\cite`), so without a matching `.. [target] ...` definition elsewhere in the same document this degrades gracefully to plain text on reparse, same as any other unresolved reference |
 | `Document.Meta` | a leading field list (`:key: value`, sorted by key), the same convention `Parse` reads back |
@@ -94,11 +96,16 @@ as `latex`'s undepended-on `multirow` package for real LaTeX rowspan, or
 `markdown`'s dropped `Anchor` id): an inline `Image` degrades to its alt
 text (reST's only image construct, `.. image::`, is block-level, and can't
 legally appear inside a paragraph); a hard `LineBreak` emits a literal
-newline, which reads back as an ordinary wrapped line, not a break; an
-`Anchor`'s `ID` is dropped, only its marked text renders (`docutils/rst` has
-no reader yet for reST's own inline-internal-target syntax — see its
-README's "Not yet ported" list — so emitting it couldn't round-trip through
-this package's own `Parse` anyway).
+newline, which reads back as an ordinary wrapped line, not a break; a POINT
+`Anchor` (no visible text) has nothing to attach reST's inline-target syntax
+to (that syntax requires non-empty backtick-quoted content) and renders to
+nothing — an `Anchor` WITH visible text now round-trips faithfully as of
+`docutils/rst` v0.4.0 (see above), UNLESS its `ID` was supplied separately
+from its own text (for example by a converter other than this package's own
+`Parse` — LaTeX's `\label{sec-intro}` next to unrelated visible content):
+reST resolves an inline target by its visible text, not by an externally
+attached id, so the written document's target re-resolves under a different
+name than the original `ID`.
 
 ## Round-trip
 

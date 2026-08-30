@@ -412,8 +412,13 @@ func TestWriteContains(t *testing.T) {
 			[]string{"one\ntwo"},
 		},
 		{
-			"an anchor renders only its marked text, its id dropped",
+			"an anchor with visible text emits reST's inline internal target, which docutils/rst v0.4.0+ reads back",
 			richdoc.New().P(richdoc.Txt("see "), richdoc.Mark("pt", richdoc.Txt("here"))).Doc(),
+			[]string{"see _`here`"},
+		},
+		{
+			"a point anchor (no visible text) has no reST equivalent and renders to nothing",
+			richdoc.New().P(richdoc.Txt("see "), richdoc.Mark("pt"), richdoc.Txt("here")).Doc(),
 			[]string{"see here"},
 		},
 		{
