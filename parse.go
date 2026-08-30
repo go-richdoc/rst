@@ -244,13 +244,28 @@ func (c *converter) convertList(el *doctree.Element, ordered bool) richdoc.List 
 	return l
 }
 
+// tableGroupChildren returns the elements holding thead/tbody: a <table>'s
+// <tgroup> child's own children (docutils/rst v0.10.0+ always wraps rows
+// in one, alongside <colspec> column-width metadata this package has no
+// use for — a colspec has no children of its own and no case in the
+// switch below, so it is silently skipped either way), or the table's own
+// children directly if there is no tgroup wrapper.
+func tableGroupChildren(table *doctree.Element) []doctree.Node {
+	for _, c := range table.Children {
+		if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagTgroup {
+			return ce.Children
+		}
+	}
+	return table.Children
+}
+
 // convertTable converts a simple or grid table's thead/tbody rows. A
 // grid-table cell's column/row span (see the docutils README) carries
 // through to richdoc.Cell.ColSpan/RowSpan (richdoc v0.3.0+), rather than
 // collapsing to its own unspanned cell the way it used to.
 func (c *converter) convertTable(el *doctree.Element) richdoc.Table {
 	var t richdoc.Table
-	for _, ch := range el.Children {
+	for _, ch := range tableGroupChildren(el) {
 		group, ok := ch.(*doctree.Element)
 		if !ok {
 			continue
