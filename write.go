@@ -142,16 +142,26 @@ func writeHeading(h richdoc.Heading) string {
 	return s
 }
 
-// displayWidth returns the rune count of the LAST LINE of s (a heading's
-// text is always one line in practice; len(s) in bytes would under-count a
-// multi-byte title and produce an underline shorter than docutils requires).
+// displayWidth returns a heading's own underline length: at least 1 (a
+// zero-width underline isn't valid reST even for an empty title), never
+// less than the rune count (len(s) in bytes would under-count a multi-byte
+// title). Table-cell padding math needs the PLAIN rune count instead — an
+// empty cell has to pad as 0 characters wide, not 1 — see runeLen; using
+// this function there was a real bug (a genuinely empty padding cell came
+// out one character narrower than its column, throwing off every column
+// after it in that row).
 func displayWidth(s string) int {
+	if n := runeLen(s); n > 0 {
+		return n
+	}
+	return 1
+}
+
+// runeLen is the plain rune count of s, no minimum.
+func runeLen(s string) int {
 	n := 0
 	for range s {
 		n++
-	}
-	if n < 1 {
-		return 1
 	}
 	return n
 }
@@ -211,56 +221,171 @@ func indentItem(content, marker string) string {
 // fixed-width columns, a grid table's column widths are computed from actual
 // cell content, which keeps this writer from having to invent a padding
 // scheme independent of what's in the cells.
+//
+// A cell's ColSpan merges the interior "|" between the columns it covers
+// into the cell's own padded content area (the border row above/below stays
+// a full "+---+---+", unaffected — only the CONTENT line's interior
+// separator disappears; verified against a real docutils grid-table
+// example). RowSpan is preserved on the richdoc.Cell itself (so nothing is
+// lost from the tree Parse produced), but this writer does not merge the
+// horizontal border between spanned rows: reconstructing that would need
+// tracking which columns have a row-span still "open" at each border and
+// blanking just that segment, real complexity for a rarer construct than
+// column-spanning, deferred rather than half-done. The cell's own content
+// still renders in full, just as its own bordered row.
 func (w *writer) writeTable(t richdoc.Table) string {
-	cols := len(t.Header)
+	cols := spannedCols(t.Header)
 	for _, row := range t.Rows {
-		if len(row) > cols {
-			cols = len(row)
+		if n := spannedCols(row); n > cols {
+			cols = n
 		}
 	}
 	if cols == 0 {
 		return ""
 	}
 	widths := make([]int, cols)
-	headerText := w.cellTexts(t.Header, cols)
-	for i, s := range headerText {
-		widths[i] = max(widths[i], displayWidth(s))
-	}
-	rowTexts := make([][]string, len(t.Rows))
+	headerCells := spanCellTexts(w, t.Header, cols)
+	widenColumns(widths, headerCells)
+	rowCells := make([][]spanCell, len(t.Rows))
 	for r, row := range t.Rows {
-		rowTexts[r] = w.cellTexts(row, cols)
-		for i, s := range rowTexts[r] {
-			widths[i] = max(widths[i], displayWidth(s))
-		}
+		rowCells[r] = spanCellTexts(w, row, cols)
+		widenColumns(widths, rowCells[r])
 	}
 	for i, wd := range widths {
 		if wd < 1 {
 			widths[i] = 1
 		}
 	}
+	widenSpannedColumns(widths, headerCells)
+	for _, rc := range rowCells {
+		widenSpannedColumns(widths, rc)
+	}
 
 	var b strings.Builder
 	border := gridBorder(widths, '-')
 	b.WriteString(border + "\n")
 	if len(t.Header) > 0 {
-		b.WriteString(gridRow(headerText, widths) + "\n")
+		b.WriteString(gridRow(headerCells, widths) + "\n")
 		b.WriteString(gridBorder(widths, '=') + "\n")
 	}
-	for _, rt := range rowTexts {
-		b.WriteString(gridRow(rt, widths) + "\n")
+	for _, rc := range rowCells {
+		b.WriteString(gridRow(rc, widths) + "\n")
 		b.WriteString(border + "\n")
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (w *writer) cellTexts(cells []richdoc.Cell, cols int) []string {
-	out := make([]string, cols)
-	for i := 0; i < cols; i++ {
-		if i < len(cells) {
-			out[i] = w.writeInlines(cells[i].Inlines)
+// spanCell is one cell's rendered text alongside the column span it covers
+// (at least 1).
+type spanCell struct {
+	text string
+	span int
+}
+
+func cellSpan(c richdoc.Cell) int {
+	if c.ColSpan < 1 {
+		return 1
+	}
+	return c.ColSpan
+}
+
+// spannedCols totals a row's logical column count, cells' spans included —
+// necessarily >= len(cells), and equal to it only when nothing spans.
+func spannedCols(cells []richdoc.Cell) int {
+	n := 0
+	for _, c := range cells {
+		n += cellSpan(c)
+	}
+	return n
+}
+
+// flattenCellText collapses any newline in a cell's rendered text to a
+// space — a grid table row is exactly one source line in this writer's
+// output, so a literal "\n" (a multi-line cell's own wrapped content,
+// preserved verbatim inside its richdoc.Text by Parse; or a richdoc.LineBreak,
+// which writeInline renders as a literal newline for ordinary paragraph
+// text) would otherwise split a table row across lines and corrupt the
+// whole grid, not just that one cell. Same fix markdown's own
+// renderTableCell already applies for the identical reason.
+func flattenCellText(s string) string {
+	return strings.ReplaceAll(s, "\n", " ")
+}
+
+// spanCellTexts renders a row's cells to text+span pairs, padding the
+// logical column count out to cols with empty unspanned cells (a short row,
+// same as [richdoc.Table]'s own doc comment allows for a headerless or
+// ragged table) so [gridRow]/[widenColumns] never need to special-case a
+// row narrower than the table.
+func spanCellTexts(w *writer, cells []richdoc.Cell, cols int) []spanCell {
+	out := make([]spanCell, 0, len(cells))
+	used := 0
+	for _, c := range cells {
+		if used >= cols {
+			break
 		}
+		span := cellSpan(c)
+		if used+span > cols {
+			span = cols - used
+		}
+		out = append(out, spanCell{text: flattenCellText(w.writeInlines(c.Inlines)), span: span})
+		used += span
+	}
+	for used < cols {
+		out = append(out, spanCell{span: 1})
+		used++
 	}
 	return out
+}
+
+// widenColumns widens each UNSPANNED cell's own column to fit its content —
+// the same "establish widths from ordinary cells first" pass every table
+// here has always done, just column-index-aware now that a row's cells
+// don't map 1:1 to columns once something spans.
+func widenColumns(widths []int, cells []spanCell) {
+	col := 0
+	for _, c := range cells {
+		if c.span == 1 {
+			if wd := runeLen(c.text); wd > widths[col] {
+				widths[col] = wd
+			}
+		}
+		col += c.span
+	}
+}
+
+// widenSpannedColumns runs once unspanned widths are settled: if a spanning
+// cell's own content is wider than the columns it covers already provide —
+// spanTextWidth, the same quantity [gridRow] computes to pad against —
+// widens the LAST column in its span to absorb the whole difference. Simple
+// over an even split: correctness (the merged content still fits) matters
+// here, not perfectly balanced column widths for a cell nothing else in the
+// table constrains.
+func widenSpannedColumns(widths []int, cells []spanCell) {
+	col := 0
+	for _, c := range cells {
+		if c.span > 1 {
+			need := runeLen(c.text) - spanTextWidth(widths, col, c.span)
+			if need > 0 {
+				widths[col+c.span-1] += need
+			}
+		}
+		col += c.span
+	}
+}
+
+// spanTextWidth is the padded-text-area width available to a cell spanning
+// `span` columns starting at `col` — derived from gridBorder's own
+// per-column "+2" convention: merging N columns removes N-1 interior "|"
+// characters but each removal effectively donates 3 characters (the
+// interior "|" plus the two single padding spaces that flanked it) to the
+// merged content area, verified by matching total line length against
+// gridBorder's unchanged output for a real docutils grid-table example.
+func spanTextWidth(widths []int, col, span int) int {
+	total := 3 * (span - 1)
+	for i := col; i < col+span; i++ {
+		total += widths[i]
+	}
+	return total
 }
 
 func gridBorder(widths []int, ch byte) string {
@@ -273,15 +398,18 @@ func gridBorder(widths []int, ch byte) string {
 	return b.String()
 }
 
-func gridRow(cells []string, widths []int) string {
+func gridRow(cells []spanCell, widths []int) string {
 	var b strings.Builder
 	b.WriteByte('|')
-	for i, wd := range widths {
-		cell := cells[i]
-		// pad is never negative: wd is the max displayWidth across the
-		// column, including this very cell (see writeTable).
-		pad := wd - displayWidth(cell)
-		b.WriteString(" " + cell + strings.Repeat(" ", pad) + " |")
+	col := 0
+	for _, c := range cells {
+		// pad is never negative: spanTextWidth is computed from the same
+		// widths widenColumns/widenSpannedColumns already grew to fit this
+		// very cell (see writeTable).
+		wd := spanTextWidth(widths, col, c.span)
+		pad := wd - runeLen(c.text)
+		b.WriteString(" " + c.text + strings.Repeat(" ", pad) + " |")
+		col += c.span
 	}
 	return b.String()
 }

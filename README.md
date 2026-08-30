@@ -46,7 +46,7 @@ separate reference tool (no tectonic-style external compiler, no Python
 | `block_quote` | `BlockQuote` |
 | `transition` | `ThematicBreak` |
 | `literal_block`, `doctest_block` | `CodeBlock` (no language; the literal/doctest distinction isn't preserved) |
-| `table` (simple or grid) | `Table` — a grid cell's row/column span collapses to its own cell, richdoc has no span primitive (same as a plain Markdown table) |
+| `table` (simple or grid) | `Table` — a grid cell's row/column span carries through to `Cell.ColSpan`/`RowSpan` (richdoc v0.3.0+); a cell's own content, when it's more than one top-level block (a nested list, several paragraphs — grid tables allow full block content in a cell, `Cell` cannot), is flattened with each top-level block joined by a single space rather than the words running together |
 | `emphasis` / `strong` / `literal` | `Emph` / `Strong` / `Code` |
 | `title_reference` | `Emph` (the nearest common styling; richdoc has no dedicated node) |
 | `math` (docutils' dedicated `:math:` node, not routed through `inline` at all) | `Math` |

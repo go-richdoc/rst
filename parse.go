@@ -4,6 +4,7 @@
 package rst
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/go-docutils/docutils/doctree"
@@ -243,11 +244,10 @@ func (c *converter) convertList(el *doctree.Element, ordered bool) richdoc.List 
 	return l
 }
 
-// convertTable converts a simple or grid table's thead/tbody rows. richdoc's
-// [richdoc.Table] has no colspan/rowspan primitive, matching plain Markdown
-// tables, so a grid-table cell's span (see the docutils README) collapses to
-// its own cell — a real, documented gap, not silent corruption: the spanned
-// cell's own text still appears, just no longer merged.
+// convertTable converts a simple or grid table's thead/tbody rows. A
+// grid-table cell's column/row span (see the docutils README) carries
+// through to richdoc.Cell.ColSpan/RowSpan (richdoc v0.3.0+), rather than
+// collapsing to its own unspanned cell the way it used to.
 func (c *converter) convertTable(el *doctree.Element) richdoc.Table {
 	var t richdoc.Table
 	for _, ch := range el.Children {
@@ -283,9 +283,86 @@ func (c *converter) convertRow(row *doctree.Element) []richdoc.Cell {
 		if !ok || entry.Tag != doctree.TagEntry {
 			continue
 		}
-		cells = append(cells, richdoc.Cell{Inlines: c.convertInlines(entry.Children)})
+		cells = append(cells, richdoc.Cell{
+			Inlines: c.cellInlines(entry.Children),
+			ColSpan: extraSpan(entry, "morecols"),
+			RowSpan: extraSpan(entry, "morerows"),
+		})
 	}
 	return cells
+}
+
+// cellInlines converts a table entry's content to inline text for
+// richdoc.Cell, which can only hold inline content — unlike a document's
+// top-level blocks, reST's grid tables allow full block content in a cell
+// (nested lists, multiple paragraphs; see docutils/rst's own README). A
+// cell holding just one paragraph (the overwhelming common case) is
+// unaffected by any of this; a cell with more than one top-level block has
+// them joined by a single space instead of running together with no
+// separator at all — lossy (which words belonged to which list item or
+// paragraph is gone), but not GARBLED. Same underlying constraint as
+// go-richdoc/latex's own documented "cell content flattened to plain
+// text": richdoc.Cell has no Blocks field to hold real block structure in.
+func (c *converter) cellInlines(children []doctree.Node) []richdoc.Inline {
+	var parts [][]richdoc.Inline
+	for _, ch := range children {
+		if in := c.cellBlockInlines(ch); len(in) > 0 {
+			parts = append(parts, in)
+		}
+	}
+	var out []richdoc.Inline
+	for i, p := range parts {
+		if i > 0 {
+			out = append(out, richdoc.Text{Value: " "})
+		}
+		out = append(out, p...)
+	}
+	return out
+}
+
+// cellBlockInlines flattens one child of a table entry. A paragraph or a
+// genuinely inline node (emphasis, a reference, ...) converts the normal
+// way; a further block container (a list, a list item, a block quote, a
+// field/definition list and its parts) recurses through cellInlines
+// itself, so ITS OWN children get the same space-joining treatment,
+// keeping (for example) separate list items from running together.
+func (c *converter) cellBlockInlines(n doctree.Node) []richdoc.Inline {
+	el, ok := n.(*doctree.Element)
+	if !ok {
+		return c.convertInlineNode(n)
+	}
+	switch el.Tag {
+	case doctree.TagParagraph:
+		return c.convertInlines(el.Children)
+	case doctree.TagBulletList, doctree.TagEnumeratedList, doctree.TagListItem,
+		doctree.TagBlockQuote, doctree.TagDefinitionList, doctree.TagDefinitionListItem,
+		doctree.TagFieldList, doctree.TagField, doctree.TagTerm, doctree.TagDefinition,
+		doctree.TagFieldName, doctree.TagFieldBody:
+		return c.cellInlines(el.Children)
+	case doctree.TagLiteralBlock, doctree.TagDoctestBlock, doctree.TagLineBlock:
+		return []richdoc.Inline{richdoc.Code{Value: doctree.AsText(el)}}
+	default:
+		return c.convertInlineElement(el)
+	}
+}
+
+// extraSpan reads a grid-table entry's morecols/morerows attribute — the
+// number of EXTRA columns/rows spanned, docutils' own convention, e.g.
+// morecols="1" for a cell spanning 2 columns — into richdoc.Cell's own
+// ColSpan/RowSpan (the TOTAL span, so that same cell gets ColSpan 2), a
+// deliberately off-by-one difference from the attribute's own name kept
+// consistent with the docutils/html and docutils/latex writers' identical
+// "+1" convention for the same attribute.
+func extraSpan(entry *doctree.Element, attr string) int {
+	extra := entry.Attr(attr)
+	if extra == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(extra)
+	if err != nil {
+		return 0
+	}
+	return n + 1
 }
 
 // convertInlines converts a sequence of doctree nodes to richdoc inlines,
