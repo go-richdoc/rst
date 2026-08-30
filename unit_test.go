@@ -221,6 +221,16 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", "| line one\n| line two").Doc(),
 		},
 		{
+			// Guards a real bug: rawLineBlock used to only walk <line>
+			// children, so once docutils/rst v0.11.0 started nesting an
+			// indented sub-line into its own <line_block> (see
+			// go-docutils-org.md), that nested content was silently
+			// dropped rather than reconstructed.
+			"line block with an indented sub-line preserves the nested content, not just the top-level lines",
+			"| top\n|   nested\n| top again\n",
+			richdoc.New().RawBlock("rst", "| top\n|   nested\n| top again").Doc(),
+		},
+		{
 			"option list becomes a RawBlock, its flags preserved rather than silently dropped",
 			"-f, --file=FILE  Grouped short+long.\n-ovalue       Embedded.\n",
 			richdoc.New().RawBlock("rst", "-f, --file=FILE  Grouped short+long.\n-ovalue  Embedded.").Doc(),

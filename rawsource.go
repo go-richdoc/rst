@@ -170,15 +170,30 @@ func rawOption(opt *doctree.Element) string {
 }
 
 func rawLineBlock(el *doctree.Element) string {
+	return strings.Join(rawLineBlockLines(el, 0), "\n")
+}
+
+// rawLineBlockLines walks a (possibly nested, docutils/rst v0.11.0+)
+// line_block, reconstructing each line with enough extra leading space
+// after "| " to preserve its nesting depth relative to its siblings on
+// reparse — nestLineBlockSegment (docutils/rst's lineblock.go) only cares
+// about the RELATIVE indent between sibling lines, not the exact column
+// the original source used, so this doesn't need to match byte-for-byte.
+func rawLineBlockLines(el *doctree.Element, depth int) []string {
 	var lines []string
 	for _, c := range el.Children {
-		line, ok := c.(*doctree.Element)
-		if !ok || line.Tag != doctree.TagLine {
+		ce, ok := c.(*doctree.Element)
+		if !ok {
 			continue
 		}
-		lines = append(lines, "| "+strings.TrimSpace(doctree.AsText(line)))
+		switch ce.Tag {
+		case doctree.TagLine:
+			lines = append(lines, "| "+strings.Repeat("  ", depth)+strings.TrimSpace(doctree.AsText(ce)))
+		case doctree.TagLineBlock:
+			lines = append(lines, rawLineBlockLines(ce, depth+1)...)
+		}
 	}
-	return strings.Join(lines, "\n")
+	return lines
 }
 
 func rawRole(role, text string) string {
