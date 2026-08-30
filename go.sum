@@ -1,0 +1,4 @@
+github.com/go-docutils/docutils v0.1.0 h1:q7JPecn94DIHtw9uHqGuyAOleOL1VXaTbBrwPdt7TxY=
+github.com/go-docutils/docutils v0.1.0/go.mod h1:HuaoJ4l8061JVxj8IxKWAooCTUEa7agwK+0epTlzApw=
+github.com/go-richdoc/richdoc v0.2.0 h1:z9cLox9MoInZL6fIlweMzgDT/VqgnB2ZucSIEaRFglY=
+github.com/go-richdoc/richdoc v0.2.0/go.mod h1:aCX8ulqg5CoKqSWgWeEWul1Oj0d2VxQeaQNI0+jsm7c=
