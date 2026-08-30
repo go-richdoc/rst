@@ -203,6 +203,34 @@ func rawNoteRef(el *doctree.Element) string {
 	}
 }
 
+// isSyntheticFootnoteName reports whether name looks like one of
+// docutils/rst v0.7.0+'s own synthetic "footnote-N" names — assigned to a
+// footnote that was originally UNNAMED ("[#]_"), purely so its reference
+// can resolve through the same refname-based mechanism a genuinely named
+// one uses (see docutils/rst's resolveFootnoteNumbers). An orphan
+// definition (this file's whole reason to exist: one no reference ever
+// resolved to) carries that synthetic name unconditionally, so
+// rawFootnoteDef can't tell "originally named" from "originally anonymous"
+// by checking for a non-empty name attribute alone, the way every other
+// case here does — checking the shape of the name itself is the only
+// signal available. A user-authored footnote whose REAL name happens to
+// collide with this exact synthetic shape is vanishingly unlikely, and the
+// failure mode if it ever happens is cosmetic (a named orphan
+// reconstructed as anonymous), not data loss — the body text is untouched
+// either way.
+func isSyntheticFootnoteName(name string) bool {
+	n, ok := strings.CutPrefix(name, "footnote-")
+	if !ok || n == "" {
+		return false
+	}
+	for _, r := range n {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // rawFootnoteDef reconstructs an orphan footnote/citation definition (one
 // convertNoteRef never resolved a reference to) using the same label rules
 // docutils/rst's own parseFootnoteOrCitation uses in reverse.
@@ -212,7 +240,7 @@ func rawFootnoteDef(el *doctree.Element) string {
 	case el.Tag == doctree.TagFootnote && el.Attr("auto") == "*":
 		label = "*"
 	case el.Tag == doctree.TagFootnote && el.Attr("auto") == "1":
-		if n := el.Attr("name"); n != "" {
+		if n := el.Attr("name"); n != "" && !isSyntheticFootnoteName(n) {
 			label = "#" + n
 		} else {
 			label = "#"

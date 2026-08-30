@@ -108,14 +108,30 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
-			"unresolvable auto footnote reference preserves its marker as RawInline, and the orphan definition as a RawBlock",
+			"an auto footnote reference now resolves via docutils/rst v0.7.0's own auto-numbering (synthetic name + matching refname)",
 			"An auto footnote [#]_.\n\n.. [#] Text.\n",
-			&richdoc.Document{Blocks: []richdoc.Block{
-				richdoc.Paragraph{Inlines: []richdoc.Inline{
-					richdoc.Txt("An auto footnote "), richdoc.RawI("rst", "[#]_"), richdoc.Txt("."),
-				}},
-				richdoc.RawBlock{Format: "rst", Text: ".. [#] Text."},
-			}},
+			richdoc.New().P(
+				richdoc.Txt("An auto footnote "),
+				richdoc.Note(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Text.")}}),
+				richdoc.Txt("."),
+			).Doc(),
+		},
+		{
+			"an auto footnote reference with no matching definition anywhere stays unresolved",
+			"An orphan auto reference [#]_.\n",
+			richdoc.New().P(
+				richdoc.Txt("An orphan auto reference "), richdoc.RawI("rst", "[#]_"), richdoc.Txt("."),
+			).Doc(),
+		},
+		{
+			"an orphan UNNAMED auto footnote definition reconstructs as anonymous, not with docutils' own synthetic name",
+			".. [#] Never referenced.\n",
+			richdoc.New().RawBlock("rst", ".. [#] Never referenced.").Doc(),
+		},
+		{
+			"an orphan auto footnote whose REAL name merely starts with 'footnote-' is not mistaken for a synthetic one",
+			".. [#footnote-abc] Never referenced.\n",
+			richdoc.New().RawBlock("rst", ".. [#footnote-abc] Never referenced.").Doc(),
 		},
 		{
 			"substitution reference resolves to its definition's content",
