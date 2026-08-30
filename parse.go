@@ -329,6 +329,12 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		return []richdoc.Inline{richdoc.Strong{Inlines: c.convertInlines(el.Children)}}
 	case doctree.TagLiteral:
 		return []richdoc.Inline{richdoc.Code{Value: doctree.AsText(el)}}
+	case doctree.TagMath:
+		// docutils/rst v0.3.0+ gives :math: its own dedicated node (see
+		// its README); convertRole's role=="math" case below still covers
+		// content from an older docutils build or any other TagInline
+		// source that happens to use that role name.
+		return []richdoc.Inline{richdoc.Math{TeX: doctree.AsText(el)}}
 	case doctree.TagTitleReference:
 		// The nearest common rendering (italics) for a construct richdoc has
 		// no dedicated node for; see the package doc comment.
@@ -352,20 +358,19 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 	}
 }
 
-// convertRole maps an interpreted-text role. Two roles this package's own
-// [Write] emits are round-tripped specifically (docutils itself defines
-// neither: reST has no native strikethrough or inline-math markup), matching
-// how [github.com/go-richdoc/markdown]'s Write leans on the pandoc `[@key]`
-// convention for a citation CommonMark cannot express. Any other role,
+// convertRole maps an interpreted-text role. "strike" is this package's own
+// [Write] convention round-tripped specifically (docutils has no native
+// strikethrough markup at all), matching how
+// [github.com/go-richdoc/markdown]'s Write leans on the pandoc `[@key]`
+// convention for a citation CommonMark cannot express. Any other role —
 // including docutils' own GENERIC roles this package's parser already
-// resolves to a dedicated tag (so they never reach here), falls back to a
-// verbatim [richdoc.RawInline].
+// resolves to a dedicated tag, and "math", which docutils/rst v0.3.0+ gives
+// its own dedicated TagMath node rather than routing through TagInline at
+// all (see convertInlineElement), so it never reaches here either — falls
+// back to a verbatim [richdoc.RawInline].
 func (c *converter) convertRole(el *doctree.Element) []richdoc.Inline {
-	switch strings.ToLower(el.Attr("role")) {
-	case "strike":
+	if strings.EqualFold(el.Attr("role"), "strike") {
 		return []richdoc.Inline{richdoc.Strikethrough{Inlines: c.convertInlines(el.Children)}}
-	case "math":
-		return []richdoc.Inline{richdoc.Math{TeX: doctree.AsText(el)}}
 	}
 	return []richdoc.Inline{richdoc.RawInline{Format: "rst", Text: rawRole(el.Attr("role"), doctree.AsText(el))}}
 }

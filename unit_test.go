@@ -142,6 +142,13 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
+			"code role maps to Code, same as a backtick literal (docutils/rst v0.3.0+ gives it a dedicated node)",
+			"A :code:`x = 1` snippet.\n",
+			richdoc.New().P(
+				richdoc.Txt("A "), richdoc.Mono("x = 1"), richdoc.Txt(" snippet."),
+			).Doc(),
+		},
+		{
 			"unknown role falls back to RawInline preserving the role name",
 			"See :custom:`text` here.\n",
 			richdoc.New().P(

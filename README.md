@@ -49,10 +49,11 @@ separate reference tool (no tectonic-style external compiler, no Python
 | `table` (simple or grid) | `Table` — a grid cell's row/column span collapses to its own cell, richdoc has no span primitive (same as a plain Markdown table) |
 | `emphasis` / `strong` / `literal` | `Emph` / `Strong` / `Code` |
 | `title_reference` | `Emph` (the nearest common styling; richdoc has no dedicated node) |
+| `math` (docutils' dedicated `:math:` node, not routed through `inline` at all) | `Math` |
 | `reference` with a resolved `refuri` | `Link`; unresolved falls back to plain inline content |
 | `substitution_reference` | resolved against its `substitution_definition`'s value and inlined directly — a real resolution this package's sibling docutils/html and docutils/latex writers deliberately don't perform; an orphan reference falls back to its bare name |
 | `footnote_reference` / `citation_reference` | resolved against its definition and inlined as a `Footnote` at the reference site — both reST forms are self-contained label+body constructs, unlike LaTeX's external-bibliography `\cite`; an unresolvable reference (most often reST's own auto-numbered `[#]_`/symbol `[*]_` forms, which `docutils/rst` never assigns a name) falls back to a verbatim `RawInline` |
-| `:strike:`/`:math:` role | `Strikethrough` / `Math` — this package's own convention (reST has neither natively); `Write` emits the same role names back |
+| `:strike:` role | `Strikethrough` — this package's own convention (reST has no native strikethrough at all); `Write` emits the same role name back |
 | leading field list (the document's very first block) | `Document.Meta` |
 | a hyperlink `target`, a `substitution_definition` | dropped — invisible bookkeeping whose consuming references are already resolved by the time this package sees the tree |
 
