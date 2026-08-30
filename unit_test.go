@@ -76,9 +76,24 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
-			"unresolved reference falls back to plain text",
+			// docutils/rst v0.13.0+ rewrites a dangling reference to
+			// <problematic> and appends a trailing "Docutils System
+			// Messages" section (real docutils' own DanglingReferences +
+			// Messages transforms, simplified) instead of leaving it a
+			// bare, unresolved <reference>; neither <problematic> nor
+			// <system_message> has a dedicated conversion case (see
+			// parse.go's convertInlineElement/convertBlockNode), so this
+			// package's own generic fallbacks handle them: problematic's
+			// text passes through as plain richdoc.Text, and the
+			// section becomes an ordinary richdoc.Heading + Paragraph
+			// like any other section would.
+			"unresolved reference becomes problematic text plus a trailing system-messages section",
 			"See `nowhere`_ now.\n",
-			richdoc.New().P(richdoc.Txt("See nowhere now.")).Doc(),
+			richdoc.New().
+				P(richdoc.Txt("See nowhere now.")).
+				H(1, richdoc.Txt("Docutils System Messages")).
+				P(richdoc.Txt(`Unknown target name: "nowhere".`)).
+				Doc(),
 		},
 		{
 			"standalone URI needs no markup at all",
