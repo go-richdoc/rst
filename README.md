@@ -107,6 +107,35 @@ reST resolves an inline target by its visible text, not by an externally
 attached id, so the written document's target re-resolves under a different
 name than the original `ID`.
 
+## To a PDF
+
+`rst/pdf` typesets a document rather than writing reST source for one:
+
+```go
+data, err := pdf.Write(doc, pdf.Options{})   // *richdoc.Document -> PDF bytes
+```
+
+It goes one step further than [`latex/pdf`](https://github.com/go-richdoc/latex),
+which writes LaTeX directly. Here the document goes out through this
+package's own `Write` as real reST source, that source is parsed by
+[`docutils/rst`](https://github.com/go-docutils/docutils) — the same engine
+`Parse` above builds on — and the resulting doctree is rendered to LaTeX by
+`docutils/latex` before [go-tex/engine](https://github.com/go-tex/engine)
+compiles it. The extra hop is the point: it proves `Write`'s reST is not
+merely reST that reparses into the same tree (this package's own round-trip
+check, above), but reST a real LaTeX toolchain accepts and typesets — the
+same chain proved by hand, earlier, compiling go-tex's own documentation
+after it went through docutils first.
+
+**It is a package rather than a module, and not part of this one**, for the
+same reason as `latex/pdf`: the engine is a six-megabyte TeX implementation
+this module already names only from a test, so importing `rst` on its own
+must not link it.
+
+What survives the whole way, read back out of the finished PDF with
+`pdftotext` rather than trusted: headings, emphasis, bold, bulleted lists,
+block code, and accented text.
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
