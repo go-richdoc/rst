@@ -25,14 +25,7 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	}
 	c.collect(doc)
 
-	children := doc.Children
-	meta := map[string]string{}
-	if len(children) > 0 {
-		if fl, ok := leadingFieldList(children[0]); ok {
-			meta = fieldsToMeta(fl)
-			children = children[1:]
-		}
-	}
+	meta, children := leadingMeta(doc.Children)
 
 	blocks := c.convertBlocks(children, 1)
 	d := &richdoc.Document{Blocks: blocks}
@@ -42,16 +35,45 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	return d, nil
 }
 
-// leadingFieldList reports whether n is a top-level field list, the
-// convention this package uses (matching [Write]) to round-trip
-// [richdoc.Document.Meta]: any OTHER field list, not the document's very
-// first block, falls back to [richdoc.RawBlock] instead (see convertBlockNode).
-func leadingFieldList(n doctree.Node) (*doctree.Element, bool) {
-	el, ok := n.(*doctree.Element)
-	if !ok || el.Tag != doctree.TagFieldList {
-		return nil, false
+// leadingMeta reads [richdoc.Document.Meta] off the document's very first
+// blocks and returns the rest — the convention this package uses (matching
+// [Write]) to round-trip it: any OTHER field list, not the document's own
+// first block, falls back to [richdoc.RawBlock] instead (see
+// convertBlockNode). The first block is either a plain field_list, or
+// (docutils/rst v0.12.0+) a promoted docinfo — see docinfoToMeta — followed
+// by zero or more dedication/abstract <topic> siblings docutils' own
+// DocInfo transform produces alongside it, folded in here too rather than
+// left for convertBlockNode to mishandle (a bare <topic>, like a bare
+// <docinfo> child, has no block-level case of its own and richdoc has no
+// dedicated node for either).
+func leadingMeta(children []doctree.Node) (map[string]string, []doctree.Node) {
+	meta := map[string]string{}
+	i := 0
+	if i < len(children) {
+		if el, ok := children[i].(*doctree.Element); ok {
+			switch el.Tag {
+			case doctree.TagFieldList:
+				meta = fieldsToMeta(el)
+				i++
+			case doctree.TagDocinfo:
+				meta = docinfoToMeta(el)
+				i++
+			}
+		}
 	}
-	return el, true
+	for i < len(children) {
+		topic, ok := children[i].(*doctree.Element)
+		if !ok || topic.Tag != doctree.TagTopic {
+			break
+		}
+		class := topic.Attr("class")
+		if class != "dedication" && class != "abstract" {
+			break
+		}
+		meta[class] = topicText(topic)
+		i++
+	}
+	return meta, children[i:]
 }
 
 // fieldsToMeta reads a field list's name/body pairs into a plain map, using
@@ -60,28 +82,92 @@ func leadingFieldList(n doctree.Node) (*doctree.Element, bool) {
 func fieldsToMeta(fl *doctree.Element) map[string]string {
 	meta := map[string]string{}
 	for _, c := range fl.Children {
-		field, ok := c.(*doctree.Element)
-		if !ok || field.Tag != doctree.TagField {
-			continue
-		}
-		var name, body string
-		for _, fc := range field.Children {
-			fe, ok := fc.(*doctree.Element)
-			if !ok {
-				continue
+		if field, ok := c.(*doctree.Element); ok && field.Tag == doctree.TagField {
+			if name, body, ok := fieldNameBody(field); ok {
+				meta[name] = body
 			}
-			switch fe.Tag {
-			case doctree.TagFieldName:
-				name = doctree.AsText(fe)
-			case doctree.TagFieldBody:
-				body = strings.TrimSpace(doctree.AsText(fe))
-			}
-		}
-		if name != "" {
-			meta[name] = body
 		}
 	}
 	return meta
+}
+
+// docinfoToMeta reads a promoted <docinfo>'s children into the same flat
+// map fieldsToMeta builds from an unpromoted field_list, so a caller sees
+// identical Meta either way regardless of which shape docutils/rst
+// produced (see [package doc]): a typed field's own tag name becomes the
+// key (e.g. "date", "version"); "authors" joins its <author> children with
+// "; ", the same separator docutils/rst's own docinfo.go tries FIRST when
+// splitting a single author-list field body (falling back to "," only if
+// that yields no split), chosen here for the same reason — a name itself
+// might contain a comma more plausibly than a semicolon. A plain
+// (unrecognized-name or compound-body) <field>, still folded into docinfo
+// by real docutils rather than left in a separate list, is read the same
+// way fieldsToMeta reads one.
+func docinfoToMeta(docinfo *doctree.Element) map[string]string {
+	meta := map[string]string{}
+	for _, c := range docinfo.Children {
+		el, ok := c.(*doctree.Element)
+		if !ok {
+			continue
+		}
+		switch el.Tag {
+		case doctree.TagField:
+			if name, body, ok := fieldNameBody(el); ok {
+				meta[name] = body
+			}
+		case doctree.TagAuthors:
+			var names []string
+			for _, ac := range el.Children {
+				if a, ok := ac.(*doctree.Element); ok && a.Tag == doctree.TagAuthor {
+					names = append(names, strings.TrimSpace(doctree.AsText(a)))
+				}
+			}
+			meta["authors"] = strings.Join(names, "; ")
+		default:
+			meta[el.Tag] = strings.TrimSpace(doctree.AsText(el))
+		}
+	}
+	return meta
+}
+
+// fieldNameBody reads one <field>'s name/body pair, ok=false if it has no
+// name (malformed input this parser never actually produces, but a
+// zero-value guard is cheaper than a panic).
+func fieldNameBody(field *doctree.Element) (name, body string, ok bool) {
+	for _, fc := range field.Children {
+		fe, ok := fc.(*doctree.Element)
+		if !ok {
+			continue
+		}
+		switch fe.Tag {
+		case doctree.TagFieldName:
+			name = doctree.AsText(fe)
+		case doctree.TagFieldBody:
+			body = strings.TrimSpace(doctree.AsText(fe))
+		}
+	}
+	return name, body, name != ""
+}
+
+// topicText flattens a dedication/abstract <topic>'s content (its own
+// <title> child skipped — "Dedication"/"Abstract" restates what the Meta
+// key already says) into a single Meta value. Multiple paragraphs join
+// with a single space rather than a blank line: writeMeta (write.go)
+// emits every Meta value on its own ":key: value" line with no
+// continuation-line support at all, so a literal blank line here would
+// write out a field a reparse couldn't read back as one value.
+func topicText(topic *doctree.Element) string {
+	var parts []string
+	for _, c := range topic.Children {
+		el, ok := c.(*doctree.Element)
+		if !ok || el.Tag == doctree.TagTitle {
+			continue
+		}
+		if t := strings.TrimSpace(doctree.AsText(el)); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // converter carries parse-wide state: the footnote/citation definitions

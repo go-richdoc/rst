@@ -187,6 +187,27 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			// Guards a real bug this docutils/rst release surfaced:
+			// docutils promotes a leading field list with a RECOGNIZED
+			// bibliographic name (author, date, version, ...) to a
+			// <docinfo> element instead of leaving it a plain
+			// <field_list> — a shape leadingMeta didn't originally know
+			// about, silently losing the whole thing (docinfo has no
+			// block-level case of its own, so convertBlockNode's default
+			// fallback walked into its typed children as if they were
+			// blocks, where they were dropped).
+			"a leading field list with recognized bibliographic names (docinfo-promoted) still becomes Document.Meta",
+			":Authors: Jane Doe; John Smith\n:Version: 1.0\n\n:Dedication: To my cat.\n\nBody.\n",
+			&richdoc.Document{
+				Meta: map[string]string{
+					"authors":    "Jane Doe; John Smith",
+					"version":    "1.0",
+					"dedication": "To my cat.",
+				},
+				Blocks: []richdoc.Block{richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Body.")}}},
+			},
+		},
+		{
 			"simple table",
 			"=====  =====\na      b\n=====  =====\n1      2\n=====  =====\n",
 			richdoc.New().Table(
