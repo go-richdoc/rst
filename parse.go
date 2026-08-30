@@ -524,6 +524,15 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		// its README) rather than routing it through TagInline like every
 		// other role, so it's handled here, not in convertRole.
 		return []richdoc.Inline{richdoc.Math{TeX: doctree.AsText(el)}}
+	case doctree.TagRaw:
+		// docutils/rst v0.16.0+'s inline raw role (".. role:: x(raw)"),
+		// the inline counterpart of the block-level TagRaw case below —
+		// without this case it fell through to the generic inline-text
+		// walk, which flattened genuine target-format markup ("<b>x</b>")
+		// into what LOOKS like ordinary prose the author typed, losing
+		// the "this is raw, not text" distinction entirely rather than
+		// just losing formatting.
+		return []richdoc.Inline{richdoc.RawInline{Format: el.Attr("format"), Text: doctree.AsText(el)}}
 	case doctree.TagTarget:
 		// Reached only for an INLINE internal target ("_`text`",
 		// docutils/rst v0.4.0+) — a block-level hyperlink target never

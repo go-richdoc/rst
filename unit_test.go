@@ -256,6 +256,20 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("html", "<b>bold</b>").Doc(),
 		},
 		{
+			// Guards a real bug: <raw> (docutils/rst v0.16.0+'s inline
+			// role form) had no convertInlineElement case, so it fell
+			// through to the generic inline-text walk and flattened
+			// "<b>x</b>" into what looked like ordinary prose the author
+			// typed — losing the "this is raw, not text" distinction
+			// entirely, not just formatting. The leading empty RawBlock
+			// is the ".. role::" registration itself — invisible
+			// bookkeeping, but still a real (if content-free) comment
+			// node, same as any other comment this converter preserves.
+			"an inline raw role becomes a RawInline, its markup not flattened into plain text",
+			".. role:: myraw(raw)\n   :format: html\n\nSee :myraw:`<b>x</b>` here.\n",
+			richdoc.New().RawBlock("rst", "..").P(richdoc.Txt("See "), richdoc.RawI("html", "<b>x</b>"), richdoc.Txt(" here.")).Doc(),
+		},
+		{
 			"a non-leading field list becomes a RawBlock, unlike the leading one that becomes Meta",
 			"Para.\n\n:key: value\n",
 			richdoc.New().P(richdoc.Txt("Para.")).RawBlock("rst", ":key: value").Doc(),
