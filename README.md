@@ -60,7 +60,8 @@ separate reference tool (no tectonic-style external compiler, no Python
 silently lost, resynthesized from parsed structure rather than a verbatim
 source slice — semantically equivalent, not necessarily byte-identical, see
 the doc comment on `rawsource.go`): directives, comments, a non-leading field
-list, definition lists, line blocks, subscript/superscript, any other
+list, definition lists, line blocks, option lists (man-page-style
+`-f, --file=ARG` items), subscript/superscript, any other
 interpreted-text role, an unresolvable footnote/citation reference, and an
 orphan footnote/citation definition (one no reference in the document ever
 resolved to — preserved rather than dropped, in case a converter or a human

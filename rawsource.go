@@ -97,6 +97,78 @@ func rawDefinitionList(el *doctree.Element) string {
 	return strings.Join(parts, "\n\n")
 }
 
+// rawOptionList reconstructs a man-page-style option list ("-f, --file=ARG
+// Description."). richdoc has no node for it at all (it's rarer even than
+// field/definition lists, which is why docutils/rst itself deferred it
+// initially — see that repo's rst/fieldlist.go), so like those two it falls
+// back to a RawBlock; the description is flattened the same lossy way (see
+// flattenBody) as a field body.
+func rawOptionList(el *doctree.Element) string {
+	var lines []string
+	for _, c := range el.Children {
+		item, ok := c.(*doctree.Element)
+		if !ok || item.Tag != doctree.TagOptionListItem {
+			continue
+		}
+		var marker, desc string
+		for _, ic := range item.Children {
+			ie, ok := ic.(*doctree.Element)
+			if !ok {
+				continue
+			}
+			switch ie.Tag {
+			case doctree.TagOptionGroup:
+				marker = rawOptionGroup(ie)
+			case doctree.TagDescription:
+				desc = flattenBody(ie)
+			}
+		}
+		line := marker
+		if desc != "" {
+			line += "  " + desc
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func rawOptionGroup(group *doctree.Element) string {
+	var opts []string
+	for _, c := range group.Children {
+		opt, ok := c.(*doctree.Element)
+		if !ok || opt.Tag != doctree.TagOption {
+			continue
+		}
+		opts = append(opts, rawOption(opt))
+	}
+	return strings.Join(opts, ", ")
+}
+
+// rawOption reconstructs one "-f", "-f ARG", "--file=ARG" flag/argument
+// pair, its delimiter (" ", "=", or "" for the embedded "-ovalue" form)
+// read directly off the option_argument element, the same attribute
+// docutils/rst's own optionNode sets.
+func rawOption(opt *doctree.Element) string {
+	var flag, arg, delim string
+	for _, c := range opt.Children {
+		ce, ok := c.(*doctree.Element)
+		if !ok {
+			continue
+		}
+		switch ce.Tag {
+		case doctree.TagOptionString:
+			flag = doctree.AsText(ce)
+		case doctree.TagOptionArgument:
+			arg = doctree.AsText(ce)
+			delim = ce.Attr("delimiter")
+		}
+	}
+	if arg == "" {
+		return flag
+	}
+	return flag + delim + arg
+}
+
 func rawLineBlock(el *doctree.Element) string {
 	var lines []string
 	for _, c := range el.Children {

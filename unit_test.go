@@ -198,6 +198,11 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", "| line one\n| line two").Doc(),
 		},
 		{
+			"option list becomes a RawBlock, its flags preserved rather than silently dropped",
+			"-f, --file=FILE  Grouped short+long.\n-ovalue       Embedded.\n",
+			richdoc.New().RawBlock("rst", "-f, --file=FILE  Grouped short+long.\n-ovalue  Embedded.").Doc(),
+		},
+		{
 			"subscript and superscript fall back to RawInline (richdoc has no such node)",
 			":sub:`x` and :sup:`y`.\n",
 			richdoc.New().P(

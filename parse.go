@@ -164,6 +164,8 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawDefinitionList(el)}}
 	case doctree.TagLineBlock:
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawLineBlock(el)}}
+	case doctree.TagOptionList:
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawOptionList(el)}}
 	case doctree.TagTable:
 		return []richdoc.Block{c.convertTable(el)}
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
