@@ -108,10 +108,21 @@ func (w *writer) writeBlock(b richdoc.Block, level int) string {
 	case richdoc.MathBlock:
 		return ".. math::\n\n" + indentBlock(n.TeX)
 	case richdoc.RawBlock:
-		if n.Format == "" || strings.EqualFold(n.Format, "rst") {
+		switch {
+		case n.Format == "" || strings.EqualFold(n.Format, "rst"):
 			return n.Text
+		default:
+			// Any other format reconstructs as a real ".. raw:: FORMAT"
+			// directive rather than being dropped — unlike this
+			// package's own RawBlock fallbacks (always Format "rst",
+			// package-specific resynthesized reST this package alone
+			// knows how to read back), a non-rst Format here almost
+			// certainly came from docutils/rst's own <raw> node (see its
+			// README's node-mapping table), and ".. raw:: FORMAT" is a
+			// general, well-defined reST construct, not something only
+			// this package's own Parse can interpret.
+			return ".. raw:: " + n.Format + "\n\n" + indentBlock(n.Text)
 		}
-		return ""
 	}
 	// richdoc.Block is closed; the only remaining variant is ThematicBreak,
 	// which carries no data.

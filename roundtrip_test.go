@@ -36,6 +36,8 @@ var corpus = map[string]string{
 
 	"substitution reference used as a hyperlink": ".. |sub| replace:: replacement text\n\n.. _sub: https://example.org/sub\n\nSee |sub|_ for more.\n",
 
+	"raw directive": ".. raw:: html\n\n   <b>bold</b>\n",
+
 	"inline internal target and a same-document reference to it": "See the _`important term` and later refer to `important term`_.\n",
 
 	"standalone uri": "Visit https://example.com today.\n",

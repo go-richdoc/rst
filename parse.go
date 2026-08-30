@@ -243,6 +243,18 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		return []richdoc.Block{richdoc.CodeBlock{Text: doctree.AsText(el)}}
 	case doctree.TagComment:
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawComment(el)}}
+	case doctree.TagRaw:
+		// docutils/rst v0.15.0+ (Options.RawEnabled, on by default) — the
+		// node's own "format" attribute is the real target format
+		// (html, latex, possibly several space-separated), not "rst":
+		// unlike this package's OWN RawBlock fallbacks below, this is
+		// genuinely raw target-format content, not resynthesized reST
+		// only this package knows how to read back. Without a case here
+		// it fell through to the generic block walker, which has no
+		// notion of a bare Text child at block level and silently
+		// dropped the whole node — caught by testing this exact
+		// construct after implementing it on the docutils/rst side.
+		return []richdoc.Block{richdoc.RawBlock{Format: el.Attr("format"), Text: doctree.AsText(el)}}
 	case doctree.TagDirective:
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawDirective(el)}}
 	case doctree.TagFieldList:

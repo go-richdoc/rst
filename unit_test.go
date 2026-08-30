@@ -242,6 +242,20 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. note::\n\n   content line").Doc(),
 		},
 		{
+			// Guards a real bug: <raw> (docutils/rst v0.15.0+,
+			// Options.RawEnabled — see its README) has a bare Text
+			// child, not an Element one, so before this had its own
+			// case it fell through to the generic block walker, which
+			// has no notion of a block-level bare Text node and
+			// silently dropped it — RawBlock with Format "html" here
+			// (not "rst": this is genuine target-format content
+			// docutils itself already tagged, not this package's own
+			// reST resynthesis) is the fix.
+			"a raw directive becomes a RawBlock tagged with its real target format, not rst",
+			".. raw:: html\n\n   <b>bold</b>\n",
+			richdoc.New().RawBlock("html", "<b>bold</b>").Doc(),
+		},
+		{
 			"a non-leading field list becomes a RawBlock, unlike the leading one that becomes Meta",
 			"Para.\n\n:key: value\n",
 			richdoc.New().P(richdoc.Txt("Para.")).RawBlock("rst", ":key: value").Doc(),

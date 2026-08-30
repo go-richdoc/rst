@@ -58,6 +58,7 @@ separate reference tool (no tectonic-style external compiler, no Python
 | `:strike:` role | `Strikethrough` — this package's own convention (reST has no native strikethrough at all); `Write` emits the same role name back |
 | leading field list (the document's very first block) — plain, or (`docutils/rst` v0.12.0+) promoted to `docinfo` when it has a registered bibliographic name | `Document.Meta`, keyed by field name or, for a typed docinfo child, its own tag (`author`, `date`, `version`, ...); `authors` joins its names with `"; "`; a trailing `dedication`/`abstract` `topic` sibling (docutils' own DocInfo transform emits it right after docinfo, not inside it) is folded in as one more Meta entry, its own title dropped |
 | a BLOCK-level hyperlink `target`, a `substitution_definition` | dropped — invisible bookkeeping whose consuming references are already resolved by the time this package sees the tree |
+| `raw` (`docutils/rst` v0.15.0+, `Options.RawEnabled` — on by default there) | `RawBlock`, Format its real target format (`"html"`, `"latex"`, possibly several space-separated) — genuine target-format content docutils itself already tagged, not this package's own reST resynthesis, so `Write` reconstructs it as a real `.. raw:: FORMAT` directive rather than dropping it the way any OTHER non-`"rst"` `RawBlock` still is (see below) |
 
 **Falls back to `RawBlock`/`RawInline` with Format `"rst"`** (so nothing is
 silently lost, resynthesized from parsed structure rather than a verbatim
@@ -83,7 +84,8 @@ marked" fact is lost.
 | `BlockQuote` | indented block |
 | `Table` | a GRID table (`+---+`), column widths computed from actual cell content |
 | `MathBlock` | `.. math::` directive |
-| `RawBlock` / `RawInline` | Format `""` or `"rst"` passes through verbatim; any other format is dropped (a converter, not a filter — foreign raw content isn't this package's to interpret) |
+| `RawBlock` (block) | Format `""` or `"rst"` passes through verbatim; any OTHER format reconstructs as a real `.. raw:: FORMAT` directive — a general reST construct any reader can interpret, not something specific to this package |
+| `RawInline` | Format `""` or `"rst"` passes through verbatim; any other format is dropped (a converter, not a filter — this package has no inline counterpart to the block-level `.. raw::` directive to reconstruct one from) |
 | `Emph` / `Strong` / `Code` / `Strikethrough` / `Math` | `*x*` / `**x**` / `` ``x`` `` / `:strike:`x`` / `:math:`x`` |
 | `Link` | a bare URL round-trips through standalone-URI auto-recognition with no markup at all; otherwise `` `text <url>`_ `` |
 | `Anchor` with visible text | `` _`text` ``, reST's inline internal target — `Parse` reads this back (see above); a point anchor (no visible text) has no reST equivalent and renders to nothing |
