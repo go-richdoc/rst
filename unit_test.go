@@ -112,6 +112,23 @@ func TestParse(t *testing.T) {
 				Doc(),
 		},
 		{
+			// docutils/rst v0.17.0's SECOND, separate <problematic> source
+			// (see the SCOPE note above): an inline-markup start-string
+			// with no matching end-string, fired from inline.go's own
+			// parsing, not explicit.go's whole-document reference
+			// resolution pass. Same generic fallback handles it with no
+			// dedicated case: the <problematic>'s bare marker text ("*")
+			// is just another Text child, so it concatenates naturally
+			// with the following plain text.
+			"an unclosed inline-markup start-string becomes problematic text the same way",
+			"*emphasis without closing asterisk\n",
+			richdoc.New().
+				P(richdoc.Txt("*emphasis without closing asterisk")).
+				H(1, richdoc.Txt("Docutils System Messages")).
+				P(richdoc.Txt("Inline emphasis start-string without end-string.")).
+				Doc(),
+		},
+		{
 			"standalone URI needs no markup at all",
 			"See https://example.com now.\n",
 			richdoc.New().P(
