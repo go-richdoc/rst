@@ -61,12 +61,21 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
-			"enumerated list always starts at 1 (docutils/rst tracks no start attribute)",
+			// docutils/rst v0.25.0+ gives an enumerated_list a "start"
+			// attribute when it doesn't begin at ordinal 1, plus a
+			// sibling INFO system_message — the message becomes a
+			// trailing Paragraph via this converter's own long-standing
+			// "never silently drop system_message content" policy (see
+			// convertBlockNode's TagFootnote/TagCitation comment for the
+			// same policy elsewhere), not a new special case. An earlier
+			// version of this test predates the "start" attribute
+			// existing at all and wrongly expected Start:1.
+			"enumerated list not starting at 1 gets Start from docutils/rst's own start attribute",
 			"3. third\n4. fourth\n",
-			richdoc.New().OList(1, true,
+			richdoc.New().OList(3, true,
 				richdoc.Item(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("third")}}),
 				richdoc.Item(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("fourth")}}),
-			).Doc(),
+			).P(richdoc.Txt(`Enumerated list start value not ordinal-1: "3" (ordinal 3)`)).Doc(),
 		},
 		{
 			"block quote and transition",

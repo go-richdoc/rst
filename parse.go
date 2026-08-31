@@ -340,13 +340,22 @@ func clampLevel(level int) int {
 
 // convertList converts a bullet_list or enumerated_list. Tight mirrors the
 // CommonMark convention richdoc borrows: true when every item's content is a
-// single paragraph. docutils' own doctree carries no start-number attribute
-// for enumerated lists (see rst/parser.go), so Start is always 1 on Parse;
-// [Write] still honours a non-1 Start it receives from elsewhere (richdoc is a
-// hub other converters build documents for, not just this package's own
-// round-trip), which is why that direction is documented as one-way.
+// single paragraph. docutils/rst v0.25.0+ gives an enumerated_list a "start"
+// attribute whenever it doesn't begin at ordinal 1 (rst/parser.go's own
+// enumtype/prefix/suffix/start work, read directly) — read here, defaulting
+// to 1 when absent (the common case) or unparseable. The list's own
+// enumerator TYPE (arabic/alpha/roman) and format (period/parens/rparen)
+// have no richdoc equivalent at all and are not carried through — [Write]
+// always re-renders as plain arabic "N.", the same one-way-round-trip
+// limitation Start itself used to have before this.
 func (c *converter) convertList(el *doctree.Element, ordered bool) richdoc.List {
-	l := richdoc.List{Ordered: ordered, Start: 1, Tight: true}
+	start := 1
+	if s := el.Attr("start"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil {
+			start = n
+		}
+	}
+	l := richdoc.List{Ordered: ordered, Start: start, Tight: true}
 	for _, ch := range el.Children {
 		item, ok := ch.(*doctree.Element)
 		if !ok || item.Tag != doctree.TagListItem {
