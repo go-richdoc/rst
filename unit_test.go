@@ -343,13 +343,16 @@ func TestParse(t *testing.T) {
 			// through to the generic inline-text walk and flattened
 			// "<b>x</b>" into what looked like ordinary prose the author
 			// typed — losing the "this is raw, not text" distinction
-			// entirely, not just formatting. The leading empty RawBlock
-			// is the ".. role::" registration itself — invisible
-			// bookkeeping, but still a real (if content-free) comment
-			// node, same as any other comment this converter preserves.
+			// entirely, not just formatting. No leading RawBlock: the
+			// ".. role::" registration itself is invisible bookkeeping —
+			// go-docutils/docutils v0.23.0 fixed a real upstream bug
+			// where it left a stray, content-free <comment> node behind
+			// (contradicting its own doc comment), which this project's
+			// own earlier version of this test had encoded as a leading
+			// RawBlock("rst", "..") rather than catching as a defect.
 			"an inline raw role becomes a RawInline, its markup not flattened into plain text",
 			".. role:: myraw(raw)\n   :format: html\n\nSee :myraw:`<b>x</b>` here.\n",
-			richdoc.New().RawBlock("rst", "..").P(richdoc.Txt("See "), richdoc.RawI("html", "<b>x</b>"), richdoc.Txt(" here.")).Doc(),
+			richdoc.New().P(richdoc.Txt("See "), richdoc.RawI("html", "<b>x</b>"), richdoc.Txt(" here.")).Doc(),
 		},
 		{
 			"a non-leading field list becomes a RawBlock, unlike the leading one that becomes Meta",
