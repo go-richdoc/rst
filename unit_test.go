@@ -156,11 +156,24 @@ func TestParse(t *testing.T) {
 			// dedicated case: the <problematic>'s bare marker text ("*")
 			// is just another Text child, so it concatenates naturally
 			// with the following plain text.
+			//
+			// docutils/rst v0.20.1+ (go-docutils/docutils#3, read
+			// directly) attaches this message as a plain SIBLING
+			// <system_message> of the paragraph it came from, never a
+			// trailing "Docutils System Messages" section — real docutils'
+			// own Messages transform only wraps genuinely LOOSE
+			// (parentless) messages, and an inline-markup message already
+			// has a tree position the instant it's produced, unlike the
+			// dangling-reference case just above (which IS loose, and
+			// still gets the Heading+section treatment). convertBlockNode
+			// has no dedicated <system_message> case either way, so the
+			// ONLY tree-shape change from the section-wrapped version this
+			// test previously encoded is the missing Heading — the
+			// message's own Paragraph is otherwise identical.
 			"an unclosed inline-markup start-string becomes problematic text the same way",
 			"*emphasis without closing asterisk\n",
 			richdoc.New().
 				P(richdoc.Txt("*emphasis without closing asterisk")).
-				H(1, richdoc.Txt("Docutils System Messages")).
 				P(richdoc.Txt("Inline emphasis start-string without end-string.")).
 				Doc(),
 		},
