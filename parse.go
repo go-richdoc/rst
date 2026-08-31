@@ -295,7 +295,17 @@ func (c *converter) convertSection(el *doctree.Element, level int) []richdoc.Blo
 	var out []richdoc.Block
 	for _, ch := range el.Children {
 		if title, ok := ch.(*doctree.Element); ok && title.Tag == doctree.TagTitle {
-			out = append(out, richdoc.Heading{Level: clampLevel(level), Inlines: c.convertInlines(title.Children)})
+			// docutils/rst v0.17.0+ registers every section title as an
+			// implicit hyperlink target (id = a plain-ASCII slug of the
+			// title); carrying it onto Heading.ID is what makes a
+			// `Some Title`_-style reference — already a resolved
+			// richdoc.Link{URL: "#the-slug"} via convertReference below —
+			// point at a real anchor instead of a slug nothing in the
+			// richdoc tree actually carries. The system-messages section
+			// (see rst's own systemMessagesSection) never gets an id at
+			// all, so this is empty for it, same as any other heading
+			// nobody referenced.
+			out = append(out, richdoc.Heading{Level: clampLevel(level), ID: el.Attr("id"), Inlines: c.convertInlines(title.Children)})
 		}
 	}
 	for _, ch := range el.Children {

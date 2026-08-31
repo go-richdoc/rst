@@ -40,6 +40,8 @@ var corpus = map[string]string{
 
 	"inline internal target and a same-document reference to it": "See the _`important term` and later refer to `important term`_.\n",
 
+	"reference to a section title, resolved via the section's own implicit target": "See `My Section`_.\n\nMy Section\n==========\n\nContent.\n",
+
 	"standalone uri": "Visit https://example.com today.\n",
 
 	"thematic break": "before\n\n----\n\nafter\n",

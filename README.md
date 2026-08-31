@@ -39,7 +39,7 @@ separate reference tool (no tectonic-style external compiler, no Python
 
 | doctree tag | richdoc node |
 | --- | --- |
-| `section` | flattened: title becomes a `Heading` at the nesting depth (clamped to 1–6), the rest of the section's content follows one level deeper — richdoc has no section wrapper |
+| `section` | flattened: title becomes a `Heading` at the nesting depth (clamped to 1–6), the rest of the section's content follows one level deeper — richdoc has no section wrapper. `Heading.ID` carries the section's own implicit-target slug (docutils/rst v0.17.0+), so a resolved `` `Some Title`_ `` reference — already a `Link` to `"#the-slug"` — points at a real anchor |
 | `paragraph` | `Paragraph` |
 | `bullet_list` / `enumerated_list` | `List` (`Tight` true when every item is exactly one `Paragraph`) |
 | `list_item` | `ListItem` |

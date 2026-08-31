@@ -30,10 +30,26 @@ func TestParse(t *testing.T) {
 			"nested sections",
 			"Top\n===\n\nIntro.\n\nSub\n---\n\nNested.\n",
 			richdoc.New().
-				H(1, richdoc.Txt("Top")).
+				Add(richdoc.Heading{Level: 1, ID: "top", Inlines: []richdoc.Inline{richdoc.Txt("Top")}}).
 				P(richdoc.Txt("Intro.")).
-				H(2, richdoc.Txt("Sub")).
+				Add(richdoc.Heading{Level: 2, ID: "sub", Inlines: []richdoc.Inline{richdoc.Txt("Sub")}}).
 				P(richdoc.Txt("Nested.")).
+				Doc(),
+		},
+		{
+			// Guards a real bug: convertSection used to build a bare
+			// richdoc.Heading with no ID at all (docutils/rst had no
+			// section-implicit-target concept until v0.17.0), so a
+			// resolved `Some Title`_ reference — already a Link pointing
+			// at "#the-slug" — pointed at an anchor nothing in the
+			// richdoc tree actually carried. Both sides of the pair must
+			// agree: the Link's URL fragment and the Heading's own ID.
+			"a reference to a section title resolves to that section's own richdoc.Heading.ID",
+			"See `My Section`_.\n\nMy Section\n==========\n\nContent.\n",
+			richdoc.New().
+				P(richdoc.Txt("See "), richdoc.Href("#my-section", "", richdoc.Txt("My Section")), richdoc.Txt(".")).
+				Add(richdoc.Heading{Level: 1, ID: "my-section", Inlines: []richdoc.Inline{richdoc.Txt("My Section")}}).
+				P(richdoc.Txt("Content.")).
 				Doc(),
 		},
 		{
@@ -387,9 +403,13 @@ func TestParse(t *testing.T) {
 			"deeply nested sections clamp their heading level at 6",
 			"1\n=\n\n2\n-\n\n3\n~\n\n4\n\"\"\"\n\n5\n^^^\n\n6\n___\n\n7\n:::\n",
 			richdoc.New().
-				H(1, richdoc.Txt("1")).H(2, richdoc.Txt("2")).H(3, richdoc.Txt("3")).
-				H(4, richdoc.Txt("4")).H(5, richdoc.Txt("5")).H(6, richdoc.Txt("6")).
-				H(6, richdoc.Txt("7")).
+				Add(richdoc.Heading{Level: 1, ID: "section-1", Inlines: []richdoc.Inline{richdoc.Txt("1")}}).
+				Add(richdoc.Heading{Level: 2, ID: "section-2", Inlines: []richdoc.Inline{richdoc.Txt("2")}}).
+				Add(richdoc.Heading{Level: 3, ID: "section-3", Inlines: []richdoc.Inline{richdoc.Txt("3")}}).
+				Add(richdoc.Heading{Level: 4, ID: "section-4", Inlines: []richdoc.Inline{richdoc.Txt("4")}}).
+				Add(richdoc.Heading{Level: 5, ID: "section-5", Inlines: []richdoc.Inline{richdoc.Txt("5")}}).
+				Add(richdoc.Heading{Level: 6, ID: "section-6", Inlines: []richdoc.Inline{richdoc.Txt("6")}}).
+				Add(richdoc.Heading{Level: 6, ID: "section-7", Inlines: []richdoc.Inline{richdoc.Txt("7")}}).
 				Doc(),
 		},
 	}
