@@ -81,7 +81,7 @@ marked" fact is lost.
 | --- | --- |
 | `Heading` | underlined title (`=`, `-`, `~`, `"`, `^` by depth, clamped); a non-empty `ID` emits a leading `.. _id:` hyperlink target |
 | `Paragraph` | inline text |
-| `List` | `-` / `N.` items; a non-1 `Start` (richdoc is a hub other converters build documents for, not just this package's own round-trip — `docutils/rst`'s own doctree carries no start-number attribute, so `Parse` can't recover one) is honoured on write, one-way |
+| `List` | `-` / `N.` items; a non-1 `Start` round-trips both ways as of `docutils/rst` v0.25.0+ (its own `enumerated_list` now carries a `start` attribute, read by `Parse`) — the list's own enumerator TYPE (alpha/roman) and format (`(N)`/`N)`) have no richdoc equivalent at all, so `Write` always re-renders as plain arabic `N.`, still a one-way gap on that narrower axis |
 | `CodeBlock` | `::` literal block |
 | `BlockQuote` | indented block |
 | `Table` | a GRID table (`+---+`), column widths computed from actual cell content |
