@@ -43,7 +43,8 @@ separate reference tool (no tectonic-style external compiler, no Python
 | `paragraph` | `Paragraph` |
 | `bullet_list` / `enumerated_list` | `List` (`Tight` true when every item is exactly one `Paragraph`) |
 | `list_item` | `ListItem` |
-| `block_quote` | `BlockQuote` |
+| `block_quote` | `BlockQuote`, nested (docutils/rst v0.19.0+) when the source's own indentation varies within the run |
+| `attribution` (docutils/rst v0.19.0+ — a block quote's trailing "-- text" line) | a plain trailing `Paragraph` inside the enclosing `BlockQuote` — richdoc has no dedicated attribution concept, and the generic block fallback can't reach it at all (its children are bare inline nodes, not block-level `Paragraph` wrappers, the same shape `<raw>` needed its own case for), so this has a dedicated case too, preserving the text rather than dropping it |
 | `transition` | `ThematicBreak` |
 | `literal_block`, `doctest_block` | `CodeBlock` (no language; the literal/doctest distinction isn't preserved) |
 | `table` (simple or grid) | `Table` — a grid cell's row/column span carries through to `Cell.ColSpan`/`RowSpan` (richdoc v0.3.0+); a cell's own content, when it's more than one top-level block (a nested list, several paragraphs — grid tables allow full block content in a cell, `Cell` cannot), is flattened with each top-level block joined by a single space rather than the words running together |

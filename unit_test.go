@@ -78,6 +78,42 @@ func TestParse(t *testing.T) {
 				Doc(),
 		},
 		{
+			// Guards a real bug: docutils/rst v0.19.0's block-quote
+			// indent, discovered from the MINIMUM across a whole
+			// variable-depth run rather than the first line's own indent,
+			// is what makes a deeper-then-shallower run nest — before that
+			// fix, this same source produced two SIBLING block_quotes
+			// instead of one nested inside the other.
+			"a deeper-then-shallower run nests as a BlockQuote inside a BlockQuote",
+			"Paragraph.\n\n        Deep.\n\n    Shallow.\n",
+			richdoc.New().
+				P(richdoc.Txt("Paragraph.")).
+				Quote(
+					richdoc.BlockQuote{Blocks: []richdoc.Block{richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Deep.")}}}},
+					richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Shallow.")}},
+				).
+				Doc(),
+		},
+		{
+			// Guards a real bug: <attribution>'s children are bare
+			// INLINE nodes (parseInline's own output), not block-level
+			// Paragraph wrappers, so the generic convertBlocks fallback —
+			// which only recurses into *doctree.Element children — used
+			// to silently DROP the whole attribution, same class of bug
+			// as the pre-fix <raw> block. richdoc has no dedicated
+			// attribution concept, so it maps to a plain trailing
+			// Paragraph inside the BlockQuote instead of vanishing.
+			"a block-quote attribution is preserved as a trailing paragraph, not dropped",
+			"Paragraph.\n\n    Quoted.\n\n    -- Author\n",
+			richdoc.New().
+				P(richdoc.Txt("Paragraph.")).
+				Quote(
+					richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Quoted.")}},
+					richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Author")}},
+				).
+				Doc(),
+		},
+		{
 			"literal block",
 			"Sample::\n\n    code here\n",
 			richdoc.New().P(richdoc.Txt("Sample:")).CodeBlock("", "code here").Doc(),

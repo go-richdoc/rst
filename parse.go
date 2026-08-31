@@ -237,6 +237,17 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		return []richdoc.Block{c.convertList(el, true)}
 	case doctree.TagBlockQuote:
 		return []richdoc.Block{richdoc.BlockQuote{Blocks: c.convertBlocks(el.Children, level)}}
+	case doctree.TagAttribution:
+		// docutils/rst v0.19.0+ — a block quote's trailing "-- text"
+		// attribution. Its children are bare INLINE nodes (parseInline's
+		// own output), not block-level Paragraph wrappers, so the generic
+		// convertBlocks fallback (which only recurses into *doctree.Element
+		// children) silently dropped this entirely — the exact same
+		// bare-inline-content gap TagRaw hit before it got its own case.
+		// richdoc has no dedicated attribution concept, so this maps to a
+		// plain Paragraph, the same non-lossy generic-node choice already
+		// used for problematic/system_message elsewhere in this file.
+		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines(el.Children)}}
 	case doctree.TagTransition:
 		return []richdoc.Block{richdoc.ThematicBreak{}}
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock:
