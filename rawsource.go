@@ -4,6 +4,7 @@
 package rst
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/go-docutils/docutils/doctree"
@@ -237,6 +238,65 @@ func rawFigure(el *doctree.Element) string {
 		return header
 	}
 	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+}
+
+// rawMeta reconstructs ".. meta::" (docutils/rst v0.30.0+) as literal
+// reST source — richdoc has no HTML/head-metadata concept at all
+// (Document.Meta is keyed by field NAME for docinfo-derived values, a
+// different concept even though the shape looks similar). A <meta>
+// element's own attributes carry no ordering or "which one was the
+// marker's own bare first token vs. an extra key=value token" signal —
+// this project's doctree.Element.Attrs is a flat, unordered map — so
+// this reconstructs a semantically equivalent, deterministic marker
+// (sorted keys) rather than a byte-identical one, the same accepted
+// cost as every other function in this file: prefer "name", then
+// "http-equiv", then any other single attribute (alphabetically first)
+// as the marker's OWN primary token; every remaining attribute becomes
+// a trailing "key=value" token on the same marker line.
+func rawMeta(el *doctree.Element) string {
+	content := el.Attr("content")
+	var keys []string
+	for k := range el.Attrs {
+		if k != "content" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	primary := ""
+	for _, candidate := range []string{"name", "http-equiv"} {
+		for _, k := range keys {
+			if k == candidate {
+				primary = k
+				break
+			}
+		}
+		if primary != "" {
+			break
+		}
+	}
+	if primary == "" && len(keys) > 0 {
+		primary = keys[0]
+	}
+	var tokens []string
+	if primary != "" {
+		if primary == "name" {
+			tokens = append(tokens, el.Attrs[primary])
+		} else {
+			tokens = append(tokens, primary+"="+el.Attrs[primary])
+		}
+	}
+	for _, k := range keys {
+		if k == primary {
+			continue
+		}
+		tokens = append(tokens, k+"="+el.Attrs[k])
+	}
+	marker := ":" + strings.Join(tokens, " ") + ":"
+	line := marker
+	if content != "" {
+		line += " " + content
+	}
+	return ".. meta::\n\n" + indentBlock(line)
 }
 
 func rawFieldList(el *doctree.Element) string {

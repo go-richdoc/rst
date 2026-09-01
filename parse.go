@@ -319,6 +319,18 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// topics do, rather than silently unwrapping to its image and
 		// losing the caption/legend/figure-level options entirely.
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawFigure(el)}}
+	case doctree.TagMeta:
+		// docutils/rst v0.30.0+ -- HTML/head metadata, a different
+		// concept from Document.Meta above (which is keyed by field
+		// NAME for docinfo-derived values) even though the shape looks
+		// similar -- richdoc has no dedicated node for it either, so
+		// this falls back to a RawBlock the same way admonitions/
+		// topics/figure do, one ".. meta::" per element (each <meta>
+		// node reaches here on its own, never grouped by its original
+		// source directive -- see hoistMetaNodes on the docutils/rst
+		// side, which flattens every meta field to a sibling of the
+		// document root individually).
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawMeta(el)}}
 	case doctree.TagTable:
 		return []richdoc.Block{c.convertTable(el)}
 	case doctree.TagTarget, doctree.TagSubstitutionDef:

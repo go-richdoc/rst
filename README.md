@@ -82,7 +82,13 @@ dedication/abstract `topic` is the one exception, folded into
 richdoc has no figure/caption/legend concept either, so — unlike a bare
 `image`, see above — this falls back to a `RawBlock` too, reconstructing
 every image-level AND figure-level option on one `.. figure::` block,
-matching real docutils' own single-directive shape), subscript/superscript, any other
+matching real docutils' own single-directive shape), `meta`
+(`docutils/rst` v0.30.0+ — HTML/head metadata, a DIFFERENT concept from
+`Document.Meta` above even though the shape looks similar — falls back
+to a `RawBlock` too, one `.. meta::` per element, matching the shape
+upstream's own document-front hoisting already leaves them in: every
+meta field its own sibling, never grouped back into the directive that
+originally produced several of them together), subscript/superscript, any other
 interpreted-text role, an unresolvable footnote/citation reference, and an
 orphan footnote/citation definition (one no reference in the document ever
 resolved to — preserved rather than dropped, in case a converter or a human
