@@ -361,6 +361,28 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. admonition:: Admonition\n\n   :class: admonition-admonition\n\n   This is a generic admonition.").Doc(),
 		},
 		{
+			// docutils/rst v0.28.0+ — like the admonitions above,
+			// richdoc has no topic block type either, so this falls
+			// back to a RawBlock rather than silently unwrapping to
+			// the bare title and content.
+			"topic becomes a RawBlock, not silently unwrapped to its bare title and content",
+			".. topic:: Topic Title\n\n   Subsequent indented lines comprise\n   the body of the topic, and are\n   interpreted as body elements.\n",
+			richdoc.New().RawBlock("rst", ".. topic:: Topic Title\n\n   Subsequent indented lines comprise\n   the body of the topic, and are\n   interpreted as body elements.").Doc(),
+		},
+		{
+			// sidebar's title is optional (unlike topic's), and its
+			// own ":subtitle:" option — valid only alongside a
+			// title — is reconstructed ahead of :class:/:name:.
+			"sidebar with a subtitle becomes a RawBlock",
+			".. sidebar:: Sidebar Title\n   :subtitle: Optional Sidebar Subtitle\n\n   Subsequent indented lines comprise\n   the body of the sidebar, and are\n   interpreted as body elements.\n",
+			richdoc.New().RawBlock("rst", ".. sidebar:: Sidebar Title\n\n   :subtitle: Optional Sidebar Subtitle\n\n   Subsequent indented lines comprise\n   the body of the sidebar, and are\n   interpreted as body elements.").Doc(),
+		},
+		{
+			"sidebar with no title omits the header argument",
+			".. sidebar::\n\n   No title sidebar.\n",
+			richdoc.New().RawBlock("rst", ".. sidebar::\n\n   No title sidebar.").Doc(),
+		},
+		{
 			// Guards a real bug: <raw> (docutils/rst v0.15.0+,
 			// Options.RawEnabled — see its README) has a bare Text
 			// child, not an Element one, so before this had its own

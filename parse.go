@@ -287,6 +287,14 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// falls back to a RawBlock rather than silently unwrapping to
 		// the bare content and losing which admonition it was.
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawAdmonition(el)}}
+	case doctree.TagTopic, doctree.TagSidebar:
+		// docutils/rst v0.28.0+ -- richdoc has no topic/sidebar block
+		// type either, so like the admonitions above this falls back to
+		// a RawBlock rather than silently unwrapping to the bare title
+		// and content (the leading dedication/abstract <topic> case is
+		// already handled earlier, in leadingMeta, before this switch
+		// is ever reached for those two).
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawTopic(el)}}
 	case doctree.TagTable:
 		return []richdoc.Block{c.convertTable(el)}
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
