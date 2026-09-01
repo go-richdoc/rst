@@ -407,6 +407,27 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. figure:: pic.png\n\n   :alt: a cat\n   :height: 100\n   :width: 200\n   :scale: 50\n   :loading: lazy\n   :class: img-class\n   :name: img-name\n   :figwidth: 300px\n   :figclass: fig-class\n   :figname: fig-name\n   :align: center\n\n   A caption.\n\n   A legend line.").Doc(),
 		},
 		{
+			// docutils/rst v0.30.0+ — richdoc has no HTML/head-metadata
+			// concept either (Document.Meta is a different concept, keyed
+			// by field name for docinfo-derived values) — falls back to
+			// a RawBlock, one ".. meta::" per element, matching the same
+			// "each field is already its own sibling" shape upstream's
+			// own hoistMetaNodes leaves them in.
+			"a plain meta field becomes its own RawBlock",
+			".. meta::\n   :description: The reST markup language\n",
+			richdoc.New().RawBlock("rst", ".. meta::\n\n   :description: The reST markup language").Doc(),
+		},
+		{
+			"a meta field whose FIRST marker token is itself key=value reconstructs that as the marker's own primary token",
+			".. meta::\n   :http-equiv=Content-Type: text/html; charset=ISO-8859-1\n",
+			richdoc.New().RawBlock("rst", ".. meta::\n\n   :http-equiv=Content-Type: text/html; charset=ISO-8859-1").Doc(),
+		},
+		{
+			"a meta field with an extra key=value token beyond its own name",
+			".. meta::\n   :description lang=en: An amusing story\n",
+			richdoc.New().RawBlock("rst", ".. meta::\n\n   :description lang=en: An amusing story").Doc(),
+		},
+		{
 			// docutils/rst v0.29.0+ — an embedded image substitution
 			// resolves through convertSubstitutionRef exactly like a
 			// replace substitution already does, now that the upstream
