@@ -73,7 +73,10 @@ list, definition lists, line blocks, option lists (man-page-style
 has no admonition/callout block type at all — its own `Block` interface is
 a documented closed set — so this is preserved as a `RawBlock`, not
 silently unwrapped to the bare content with no trace it was ever a
-note/warning/etc.), subscript/superscript, any other
+note/warning/etc.), `.. topic::`/`.. sidebar::` (`docutils/rst` v0.28.0+ —
+same reasoning, no topic/sidebar block type either; a leading
+dedication/abstract `topic` is the one exception, folded into
+`Document.Meta` above instead), subscript/superscript, any other
 interpreted-text role, an unresolvable footnote/citation reference, and an
 orphan footnote/citation definition (one no reference in the document ever
 resolved to — preserved rather than dropped, in case a converter or a human

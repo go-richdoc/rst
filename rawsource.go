@@ -94,6 +94,60 @@ func rawAdmonition(el *doctree.Element) string {
 	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
 }
 
+// rawTopic reconstructs ".. topic::" or ".. sidebar::" (docutils/rst
+// v0.28.0+, el.Tag itself IS the directive name, same convention as
+// rawAdmonition) as literal reST source — richdoc has no topic/sidebar
+// block type either. Unlike an admonition's title, a topic's title is
+// REQUIRED and a sidebar's is optional but may carry its own
+// ":subtitle:" (only ever present alongside a title, per
+// runTopicOrSidebar's own validation, so no empty-title case to guard
+// here). Content is flattened the same lossy way rawAdmonition does.
+func rawTopic(el *doctree.Element) string {
+	header := ".. " + el.Tag + "::"
+	var subtitle string
+	for _, c := range el.Children {
+		ce, ok := c.(*doctree.Element)
+		if !ok {
+			continue
+		}
+		switch ce.Tag {
+		case doctree.TagTitle:
+			header += " " + doctree.AsText(ce)
+		case doctree.TagSubtitle:
+			subtitle = doctree.AsText(ce)
+		}
+	}
+	var bodyLines []string
+	if subtitle != "" {
+		bodyLines = append(bodyLines, ":subtitle: "+subtitle)
+	}
+	if class := el.Attr("class"); class != "" {
+		bodyLines = append(bodyLines, ":class: "+class)
+	}
+	if name := el.Attr("name"); name != "" {
+		bodyLines = append(bodyLines, ":name: "+name)
+	}
+	var contentParts []string
+	for _, c := range el.Children {
+		if ce, ok := c.(*doctree.Element); ok && (ce.Tag == doctree.TagTitle || ce.Tag == doctree.TagSubtitle) {
+			continue
+		}
+		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
+			contentParts = append(contentParts, t)
+		}
+	}
+	if len(contentParts) > 0 {
+		if len(bodyLines) > 0 {
+			bodyLines = append(bodyLines, "")
+		}
+		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
+	}
+	if len(bodyLines) == 0 {
+		return header
+	}
+	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+}
+
 func rawFieldList(el *doctree.Element) string {
 	var lines []string
 	for _, c := range el.Children {
