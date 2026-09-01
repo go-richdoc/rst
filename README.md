@@ -67,7 +67,13 @@ silently lost, resynthesized from parsed structure rather than a verbatim
 source slice — semantically equivalent, not necessarily byte-identical, see
 the doc comment on `rawsource.go`): directives, comments, a non-leading field
 list, definition lists, line blocks, option lists (man-page-style
-`-f, --file=ARG` items), subscript/superscript, any other
+`-f, --file=ARG` items), the nine generic admonitions
+(`attention`/`caution`/`danger`/`error`/`hint`/`important`/`note`/`tip`/
+`warning`, `docutils/rst` v0.27.0+) plus `.. admonition::` itself (richdoc
+has no admonition/callout block type at all — its own `Block` interface is
+a documented closed set — so this is preserved as a `RawBlock`, not
+silently unwrapped to the bare content with no trace it was ever a
+note/warning/etc.), subscript/superscript, any other
 interpreted-text role, an unresolvable footnote/citation reference, and an
 orphan footnote/citation definition (one no reference in the document ever
 resolved to — preserved rather than dropped, in case a converter or a human

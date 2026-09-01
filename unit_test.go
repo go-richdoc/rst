@@ -328,9 +328,37 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. a comment\n   continued").Doc(),
 		},
 		{
+			// "some-directive" is deliberately NOT one of docutils/rst's
+			// own implemented directives (note/table/list-table/raw/
+			// role) — an earlier version of this test used ".. note::"
+			// here, which predates note becoming a real, implemented
+			// directive there (v0.27.0) with its own dedicated RawBlock
+			// reconstruction (see the admonition cases just below).
 			"directive becomes a RawBlock",
-			".. note::\n\n   content line\n",
-			richdoc.New().RawBlock("rst", ".. note::\n\n   content line").Doc(),
+			".. some-directive::\n\n   content line\n",
+			richdoc.New().RawBlock("rst", ".. some-directive::\n\n   content line").Doc(),
+		},
+		{
+			// docutils/rst v0.27.0+ — a generic admonition (no argument
+			// at all; same-line text is its own first content line, not
+			// an argument). richdoc has no admonition/callout block type
+			// (its own Block interface is a documented closed set), so
+			// this falls back to a RawBlock the same way field/definition
+			// lists already do, rather than silently unwrapping to the
+			// bare content and losing which admonition it was.
+			"a generic admonition becomes a RawBlock, not silently unwrapped to its bare content",
+			".. note:: One-line notes.\n",
+			richdoc.New().RawBlock("rst", ".. note::\n\n   One-line notes.").Doc(),
+		},
+		{
+			":class:/:name: options are reconstructed on an admonition's own RawBlock",
+			".. Note:: :name: mynote\n   :class: testnote\n\n   Admonitions support the generic \"name\" and \"class\" options.\n",
+			richdoc.New().RawBlock("rst", ".. note::\n\n   :class: testnote\n   :name: mynote\n\n   Admonitions support the generic \"name\" and \"class\" options.").Doc(),
+		},
+		{
+			"the generic admonition directive keeps its title on the header line",
+			".. admonition:: Admonition\n\n   This is a generic admonition.\n",
+			richdoc.New().RawBlock("rst", ".. admonition:: Admonition\n\n   :class: admonition-admonition\n\n   This is a generic admonition.").Doc(),
 		},
 		{
 			// Guards a real bug: <raw> (docutils/rst v0.15.0+,
@@ -438,8 +466,8 @@ func TestParse(t *testing.T) {
 		},
 		{
 			"an argument-less, body-less directive becomes a bare header RawBlock",
-			".. note::\n",
-			richdoc.New().RawBlock("rst", ".. note::").Doc(),
+			".. some-directive::\n",
+			richdoc.New().RawBlock("rst", ".. some-directive::").Doc(),
 		},
 		{
 			"an empty field body still emits its marker",
