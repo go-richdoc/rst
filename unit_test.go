@@ -383,6 +383,40 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. sidebar::\n\n   No title sidebar.").Doc(),
 		},
 		{
+			// docutils/rst v0.29.0+ — a standalone block-level image
+			// wraps richdoc's own real Image inline type in a
+			// single-inline Paragraph, richdoc's nearest non-lossy
+			// analogue to a bare block-level image (it has no dedicated
+			// image/figure block type of its own).
+			"a standalone block-level image becomes a Paragraph wrapping a real Image inline",
+			".. image:: pic.png\n   :alt: a cat\n",
+			richdoc.New().P(richdoc.Img("pic.png", "a cat", "")).Doc(),
+		},
+		{
+			// richdoc has no figure/caption/legend concept either, so —
+			// like admonitions/topics — this falls back to a RawBlock
+			// rather than silently unwrapping to its bare image and
+			// losing the caption.
+			"figure becomes a RawBlock, not silently unwrapped to its bare image",
+			".. figure:: pic.png\n\n   A caption.\n",
+			richdoc.New().RawBlock("rst", ".. figure:: pic.png\n\n   A caption.").Doc(),
+		},
+		{
+			"every image-level AND figure-level option, plus a legend, is reconstructed on the figure's own RawBlock",
+			".. figure:: pic.png\n   :alt: a cat\n   :height: 100\n   :width: 200\n   :scale: 50\n   :loading: lazy\n   :class: img-class\n   :name: img-name\n   :figwidth: 300\n   :figclass: fig-class\n   :figname: fig-name\n   :align: center\n\n   A caption.\n\n   A legend line.\n",
+			richdoc.New().RawBlock("rst", ".. figure:: pic.png\n\n   :alt: a cat\n   :height: 100\n   :width: 200\n   :scale: 50\n   :loading: lazy\n   :class: img-class\n   :name: img-name\n   :figwidth: 300px\n   :figclass: fig-class\n   :figname: fig-name\n   :align: center\n\n   A caption.\n\n   A legend line.").Doc(),
+		},
+		{
+			// docutils/rst v0.29.0+ — an embedded image substitution
+			// resolves through convertSubstitutionRef exactly like a
+			// replace substitution already does, now that the upstream
+			// definition nests a real <image> child instead of
+			// flattening it onto attributes.
+			"a substitution reference resolving to an embedded image substitution",
+			".. |cat| image:: pic.png\n\nSee |cat| here.\n",
+			richdoc.New().P(richdoc.Txt("See "), richdoc.Img("pic.png", "cat", ""), richdoc.Txt(" here.")).Doc(),
+		},
+		{
 			// Guards a real bug: <raw> (docutils/rst v0.15.0+,
 			// Options.RawEnabled — see its README) has a bare Text
 			// child, not an Element one, so before this had its own
@@ -518,9 +552,12 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
+			// an earlier version of this test used ".. image:: pic.png"
+			// here, which predates image becoming a real, implemented
+			// directive (docutils/rst v0.29.0+).
 			"a directive with arguments but no body reconstructs a one-line RawBlock",
-			".. image:: pic.png\n",
-			richdoc.New().RawBlock("rst", ".. image:: pic.png").Doc(),
+			".. some-directive:: pic.png\n",
+			richdoc.New().RawBlock("rst", ".. some-directive:: pic.png").Doc(),
 		},
 		{
 			"an orphan footnote with no body text still emits its bracket alone",

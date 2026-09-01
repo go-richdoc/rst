@@ -148,6 +148,97 @@ func rawTopic(el *doctree.Element) string {
 	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
 }
 
+// rawFigure reconstructs ".. figure::" (docutils/rst v0.29.0+) as
+// literal reST source — richdoc has no figure/caption/legend concept
+// either. Unlike rawTopic/rawAdmonition, a figure's own children are a
+// FIXED shape (an <image>, then an optional <caption>, then an optional
+// <legend>) rather than free-form content, so this reads them
+// positionally instead of scanning for a <title>: every image-level
+// option (alt/height/width/scale/loading/class/name) is reconstructed
+// alongside the figure's own (figwidth/figclass/figname/align) on the
+// SAME options block, matching real docutils' own shape (Figure directly
+// reuses Image's option_spec on one directive invocation, not two nested
+// ones) — round-trips semantically, not byte-identically, the same
+// accepted cost as every other function in this file.
+func rawFigure(el *doctree.Element) string {
+	var img, caption, legend *doctree.Element
+	for _, c := range el.Children {
+		ce, ok := c.(*doctree.Element)
+		if !ok {
+			continue
+		}
+		switch ce.Tag {
+		case doctree.TagImage:
+			img = ce
+		case doctree.TagCaption:
+			caption = ce
+		case doctree.TagLegend:
+			legend = ce
+		}
+	}
+	header := ".. figure::"
+	if img != nil {
+		header += " " + img.Attr("uri")
+	}
+	var bodyLines []string
+	if img != nil {
+		if v := img.Attr("alt"); v != "" {
+			bodyLines = append(bodyLines, ":alt: "+v)
+		}
+		if v := img.Attr("height"); v != "" {
+			bodyLines = append(bodyLines, ":height: "+v)
+		}
+		if v := img.Attr("width"); v != "" {
+			bodyLines = append(bodyLines, ":width: "+v)
+		}
+		if v := img.Attr("scale"); v != "" {
+			bodyLines = append(bodyLines, ":scale: "+v)
+		}
+		if v := img.Attr("loading"); v != "" {
+			bodyLines = append(bodyLines, ":loading: "+v)
+		}
+		if v := img.Attr("class"); v != "" {
+			bodyLines = append(bodyLines, ":class: "+v)
+		}
+		if v := img.Attr("name"); v != "" {
+			bodyLines = append(bodyLines, ":name: "+v)
+		}
+	}
+	if v := el.Attr("width"); v != "" {
+		bodyLines = append(bodyLines, ":figwidth: "+v)
+	}
+	if v := el.Attr("class"); v != "" {
+		bodyLines = append(bodyLines, ":figclass: "+v)
+	}
+	if v := el.Attr("name"); v != "" {
+		bodyLines = append(bodyLines, ":figname: "+v)
+	}
+	if v := el.Attr("align"); v != "" {
+		bodyLines = append(bodyLines, ":align: "+v)
+	}
+	var contentParts []string
+	if caption != nil {
+		if t := strings.TrimSpace(doctree.AsText(caption)); t != "" {
+			contentParts = append(contentParts, t)
+		}
+	}
+	if legend != nil {
+		if t := strings.TrimSpace(doctree.AsText(legend)); t != "" {
+			contentParts = append(contentParts, t)
+		}
+	}
+	if len(contentParts) > 0 {
+		if len(bodyLines) > 0 {
+			bodyLines = append(bodyLines, "")
+		}
+		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
+	}
+	if len(bodyLines) == 0 {
+		return header
+	}
+	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+}
+
 func rawFieldList(el *doctree.Element) string {
 	var lines []string
 	for _, c := range el.Children {

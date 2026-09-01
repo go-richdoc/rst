@@ -54,12 +54,14 @@ separate reference tool (no tectonic-style external compiler, no Python
 | an INLINE `raw` (docutils/rst v0.16.0+ — a `.. role:: name(raw)`-registered role invoked as `` :name:`text` ``) | `RawInline`, Format the role's own real target format — the inline counterpart of the block-level `raw` case below |
 | an INLINE `target` (`` _`text` ``, docutils/rst v0.4.0+ — a target inside a paragraph, as opposed to a block-level hyperlink target, see below) | `Anchor` — its "name" attribute (derived from its own visible text) becomes `Anchor.ID` |
 | `reference` with a resolved `refuri` | `Link`; an unresolved ANONYMOUS one (docutils/rst never rewrites those — see its own README) falls back to plain inline content; a resolved same-document anchor (`refuri` starting with `#`, from an inline internal target above) is still just a `Link` — richdoc has no distinct "internal cross-reference by name" inline type of its own besides `CrossRef`, which this package reserves for its own `Write` output (see below) |
+| `image` (`docutils/rst` v0.29.0+) | `Image` — reached both for a standalone block-level image (wrapped in a single-inline `Paragraph`, see below) and for a substitution definition's own embedded `image::` (inline-classified in real docutils too, the only reason it survives that definition's own Inline-only filter unflattened) |
 | `problematic` (docutils/rst v0.13.0+ — a dangling NAMED reference rewritten in place; v0.18.0+ also an unclosed inline-markup start-string, e.g. an emphasis `*` with no closing `*`) / a trailing `<section class="system-messages">` | no dedicated case for either: `problematic`'s own text passes through as plain inline text via this package's generic inline fallback, and the section becomes an ordinary `Heading` + `Paragraph` (its `system_message` children have no case either, so their own `paragraph` child converts normally) the same way any other section would |
 | `substitution_reference` | resolved against its `substitution_definition`'s value and inlined directly — a real resolution this package's sibling docutils/html and docutils/latex writers deliberately don't perform; an orphan reference falls back to its bare name |
 | `footnote_reference` / `citation_reference` | resolved against its definition and inlined as a `Footnote` at the reference site — both reST forms are self-contained label+body constructs, unlike LaTeX's external-bibliography `\cite`; this includes auto-numbered `[#]_`/symbol `[*]_` forms as of `docutils/rst` v0.7.0, which assigns each an internal synthetic name so it resolves the same way as any other; a reference with genuinely no matching definition anywhere falls back to a verbatim `RawInline` |
 | `:strike:` role | `Strikethrough` — this package's own convention (reST has no native strikethrough at all); `Write` emits the same role name back |
 | leading field list (the document's very first block) — plain, or (`docutils/rst` v0.12.0+) promoted to `docinfo` when it has a registered bibliographic name | `Document.Meta`, keyed by field name or, for a typed docinfo child, its own tag (`author`, `date`, `version`, ...); `authors` joins its names with `"; "`; a trailing `dedication`/`abstract` `topic` sibling (docutils' own DocInfo transform emits it right after docinfo, not inside it) is folded in as one more Meta entry, its own title dropped |
 | a BLOCK-level hyperlink `target`, a `substitution_definition` | dropped — invisible bookkeeping whose consuming references are already resolved by the time this package sees the tree |
+| a standalone block-level `image` (`docutils/rst` v0.29.0+) | `Paragraph` wrapping a single `Image` inline — richdoc has no bare block-level image concept of its own, so this is the nearest non-lossy placement (the same way CommonMark itself treats a standalone image), not a `RawBlock` fallback: unlike an admonition or a topic, nothing about "this was a directive" needs preserving here |
 | `raw` (`docutils/rst` v0.15.0+, `Options.RawEnabled` — on by default there) | `RawBlock`, Format its real target format (`"html"`, `"latex"`, possibly several space-separated) — genuine target-format content docutils itself already tagged, not this package's own reST resynthesis, so `Write` reconstructs it as a real `.. raw:: FORMAT` directive rather than dropping it the way any OTHER non-`"rst"` `RawBlock` still is (see below) |
 
 **Falls back to `RawBlock`/`RawInline` with Format `"rst"`** (so nothing is
@@ -76,7 +78,11 @@ silently unwrapped to the bare content with no trace it was ever a
 note/warning/etc.), `.. topic::`/`.. sidebar::` (`docutils/rst` v0.28.0+ —
 same reasoning, no topic/sidebar block type either; a leading
 dedication/abstract `topic` is the one exception, folded into
-`Document.Meta` above instead), subscript/superscript, any other
+`Document.Meta` above instead), `figure` (`docutils/rst` v0.29.0+ —
+richdoc has no figure/caption/legend concept either, so — unlike a bare
+`image`, see above — this falls back to a `RawBlock` too, reconstructing
+every image-level AND figure-level option on one `.. figure::` block,
+matching real docutils' own single-directive shape), subscript/superscript, any other
 interpreted-text role, an unresolvable footnote/citation reference, and an
 orphan footnote/citation definition (one no reference in the document ever
 resolved to — preserved rather than dropped, in case a converter or a human

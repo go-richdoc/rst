@@ -200,7 +200,11 @@ func (c *converter) collect(n doctree.Node) {
 		// Substitution names are case-SENSITIVE in docutils, unlike a
 		// hyperlink target's or footnote's name (see explicit.go's
 		// normalizeWhitespace doc comment), so this key is used as-is.
-		if name := el.Attr("substitution"); name != "" {
+		// docutils/rst v0.29.0+ -- "name" is the substitution's own
+		// identifying attribute (matching real docutils; an earlier
+		// version there used a made-up "substitution" attribute
+		// instead, since fixed).
+		if name := el.Attr("name"); name != "" {
 			c.substDefs[name] = el
 		}
 	}
@@ -295,6 +299,26 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// already handled earlier, in leadingMeta, before this switch
 		// is ever reached for those two).
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawTopic(el)}}
+	case doctree.TagImage:
+		// docutils/rst v0.29.0+ -- a standalone ".. image::" (as
+		// opposed to one embedded in a substitution definition, which
+		// reaches convertInlineElement's own TagImage case instead --
+		// this one is never reached for that shape, since a
+		// substitution_definition's children are walked as INLINES,
+		// not blocks). richdoc has no bare block-level image concept,
+		// so this wraps the same richdoc.Image in a single-inline
+		// Paragraph -- a real, non-lossy placement (the nearest
+		// analogue to how CommonMark itself treats a standalone image),
+		// not a RawBlock fallback: unlike an admonition or a topic,
+		// nothing about "this was a directive" needs preserving here.
+		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines([]doctree.Node{el})}}
+	case doctree.TagFigure:
+		// docutils/rst v0.29.0+ -- richdoc has no figure/caption/
+		// legend concept at all, so -- unlike a bare image above --
+		// this falls back to a RawBlock the same way admonitions/
+		// topics do, rather than silently unwrapping to its image and
+		// losing the caption/legend/figure-level options entirely.
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawFigure(el)}}
 	case doctree.TagTable:
 		return []richdoc.Block{c.convertTable(el)}
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
@@ -573,6 +597,15 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		// its README) rather than routing it through TagInline like every
 		// other role, so it's handled here, not in convertRole.
 		return []richdoc.Inline{richdoc.Math{TeX: doctree.AsText(el)}}
+	case doctree.TagImage:
+		// docutils/rst v0.29.0+ -- reached both for a substitution
+		// definition's own embedded "image::" (whose <image> child is
+		// inline-classified in real docutils too, the only reason it
+		// survives that filter unflattened) and, via convertBlockNode's
+		// own TagImage case below, a standalone block-level image
+		// wrapped in a single-inline Paragraph -- richdoc already has a
+		// real Image inline type for exactly this.
+		return []richdoc.Inline{richdoc.Image{URL: el.Attr("uri"), Alt: el.Attr("alt")}}
 	case doctree.TagRaw:
 		// docutils/rst v0.16.0+'s inline raw role (".. role:: x(raw)"),
 		// the inline counterpart of the block-level TagRaw case below —
@@ -654,21 +687,7 @@ func (c *converter) convertSubstitutionRef(el *doctree.Element) []richdoc.Inline
 	if !ok {
 		return []richdoc.Inline{richdoc.Text{Value: doctree.AsText(el)}}
 	}
-	return c.convertInlines(substitutionValue(def))
-}
-
-// substitutionValue reads a substitution definition's value. Its content is
-// always an embedded directive invocation (see docutils/rst's
-// parseSubstitutionDef) — most often "replace::", whose single-line value
-// parseDirective stores as the "arguments" attribute rather than a child, so
-// that's checked first; a multi-line directive body (rare for a
-// substitution, but the same directive machinery allows it) falls back to
-// the Text child parseDirective appends in that case.
-func substitutionValue(def *doctree.Element) []doctree.Node {
-	if args := def.Attr("arguments"); args != "" {
-		return []doctree.Node{&doctree.Text{Data: args}}
-	}
-	return def.Children
+	return c.convertInlines(def.Children)
 }
 
 // convertNoteRef resolves a footnote/citation reference against the
