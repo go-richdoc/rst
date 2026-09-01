@@ -43,6 +43,57 @@ func rawDirective(el *doctree.Element) string {
 	return header + "\n\n" + indentBlock(body)
 }
 
+// rawAdmonition reconstructs one of the nine generic admonition
+// directives (docutils/rst v0.27.0+, el.Tag itself IS the directive
+// name), or ".. admonition:: TITLE" specifically, as literal reST
+// source — richdoc has no admonition/callout block type at all (its own
+// Block interface is a documented closed set), so like field/definition
+// lists above this falls back to a RawBlock. Content is flattened the
+// same lossy way rawDirective already does for a genuinely unimplemented
+// directive (doctree.AsText per child block, joined by blank lines — no
+// attempt at preserving deeper nested-list structure within one block):
+// richdoc's own fully-structured converters exist for ordinary body
+// content, this path only exists for a construct richdoc has nowhere
+// else to put it. :class:/:name: are always reconstructed when present,
+// even for ".. admonition::"'s own auto-generated default class —
+// redundant but harmless on reparse, not worth the fragility of trying
+// to detect "was this explicit".
+func rawAdmonition(el *doctree.Element) string {
+	header := ".. " + el.Tag + "::"
+	var bodyLines []string
+	for _, c := range el.Children {
+		if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagTitle {
+			header += " " + doctree.AsText(ce)
+			break
+		}
+	}
+	if class := el.Attr("class"); class != "" {
+		bodyLines = append(bodyLines, ":class: "+class)
+	}
+	if name := el.Attr("name"); name != "" {
+		bodyLines = append(bodyLines, ":name: "+name)
+	}
+	var contentParts []string
+	for _, c := range el.Children {
+		if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagTitle {
+			continue
+		}
+		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
+			contentParts = append(contentParts, t)
+		}
+	}
+	if len(contentParts) > 0 {
+		if len(bodyLines) > 0 {
+			bodyLines = append(bodyLines, "")
+		}
+		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
+	}
+	if len(bodyLines) == 0 {
+		return header
+	}
+	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+}
+
 func rawFieldList(el *doctree.Element) string {
 	var lines []string
 	for _, c := range el.Children {

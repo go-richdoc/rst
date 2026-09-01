@@ -276,6 +276,17 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawLineBlock(el)}}
 	case doctree.TagOptionList:
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawOptionList(el)}}
+	case doctree.TagAttention, doctree.TagCaution, doctree.TagDanger,
+		doctree.TagErrorAdmonition, doctree.TagHint, doctree.TagImportant,
+		doctree.TagNote, doctree.TagTip, doctree.TagWarningAdmonition,
+		doctree.TagAdmonition:
+		// docutils/rst v0.27.0+ -- the nine generic admonitions plus
+		// ".. admonition::" itself. richdoc has no admonition/callout
+		// block type at all (its own Block interface is a documented
+		// closed set), so -- like field/definition lists above -- this
+		// falls back to a RawBlock rather than silently unwrapping to
+		// the bare content and losing which admonition it was.
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawAdmonition(el)}}
 	case doctree.TagTable:
 		return []richdoc.Block{c.convertTable(el)}
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
