@@ -541,13 +541,17 @@ func labelText(el *doctree.Element) string {
 
 // flattenBody joins a container's child blocks' text with a single space,
 // skipping a leading [doctree.TagLabel] (a footnote/citation's own rendered
-// marker, redundant with the ".. [label]" this file already emits).
+// marker, redundant with the ".. [label]" this file already emits) and any
+// [doctree.TagSystemMessage] (docutils/rst v0.35.0+ nests a "Footnote/
+// Citation content expected." diagnostic directly inside an empty
+// footnote/citation — the parser's own warning about the body, not part
+// of it, and must not be reconstructed as if it were).
 func flattenBody(el *doctree.Element) string {
 	var parts []string
 	for _, c := range el.Children {
 		switch v := c.(type) {
 		case *doctree.Element:
-			if v.Tag == doctree.TagLabel {
+			if v.Tag == doctree.TagLabel || v.Tag == doctree.TagSystemMessage {
 				continue
 			}
 			if t := strings.TrimSpace(doctree.AsText(v)); t != "" {
