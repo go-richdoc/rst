@@ -628,13 +628,25 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		// just losing formatting.
 		return []richdoc.Inline{richdoc.RawInline{Format: el.Attr("format"), Text: doctree.AsText(el)}}
 	case doctree.TagTarget:
-		// Reached only for an INLINE internal target ("_`text`",
-		// docutils/rst v0.4.0+) — a block-level hyperlink target never
-		// appears as a paragraph's child, so it never reaches inline
-		// conversion at all (see convertBlockNode's TagTarget case, which
-		// drops it: its consuming references already carry a resolved
-		// refuri directly). An inline target's "name" attr is exactly
-		// richdoc.Anchor's ID.
+		// Reached for an INLINE internal target ("_`text`", docutils/rst
+		// v0.4.0+ — real visible content, its own "name" attr exactly
+		// richdoc.Anchor's ID) AND, since docutils/rst v0.31.0+, for the
+		// IMPLICIT target a named phrase-reference-with-embedded-link
+		// (`` `text <uri>`_ ``/`` `text <alias_>`_ ``) also emits as a
+		// sibling right after its own <reference> — that one carries no
+		// content of its own at all (real docutils constructs it with no
+		// text, just refuri/refname for some OTHER reference elsewhere
+		// to resolve against), so it's dropped here exactly like a
+		// block-level hyperlink target already is (convertBlockNode's
+		// own TagTarget case): the reference that produced it already
+		// carries its OWN resolved refuri/refname directly (this
+		// project's upstream dependency resolves eagerly, before this
+		// package ever sees the tree), so nothing is lost by dropping
+		// it — keeping it instead would have produced a SECOND, empty
+		// anchor with an unrelated id right next to the real link.
+		if len(el.Children) == 0 {
+			return nil
+		}
 		return []richdoc.Inline{richdoc.Anchor{ID: el.Attr("name"), Inlines: c.convertInlines(el.Children)}}
 	case doctree.TagTitleReference:
 		// The nearest common rendering (italics) for a construct richdoc has
