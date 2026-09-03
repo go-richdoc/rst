@@ -336,6 +336,11 @@ func rawDefinitionList(el *doctree.Element) string {
 			continue
 		}
 		var term, def string
+		// docutils/rst v0.38.0+ -- a term may be followed by one or more
+		// <classifier> siblings ("term : classifier"); each one is
+		// rejoined onto the term line with the same " : " delimiter
+		// docutils/rst's own splitTermClassifiers split on, or its own
+		// content would silently vanish from the reconstructed source.
 		for _, ic := range item.Children {
 			ie, ok := ic.(*doctree.Element)
 			if !ok {
@@ -344,6 +349,8 @@ func rawDefinitionList(el *doctree.Element) string {
 			switch ie.Tag {
 			case doctree.TagTerm:
 				term = doctree.AsText(ie)
+			case doctree.TagClassifier:
+				term += " : " + doctree.AsText(ie)
 			case doctree.TagDefinition:
 				def = flattenBody(ie)
 			}

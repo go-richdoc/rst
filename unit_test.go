@@ -479,6 +479,16 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", "Term\n    Definition body.").Doc(),
 		},
 		{
+			// docutils/rst v0.38.0+ -- a term's own classifier(s)
+			// ("Term : classifier") used to vanish entirely from the
+			// reconstructed source (rawDefinitionList's own inner switch
+			// had no case for the new <classifier> tag at all) -- rejoined
+			// onto the term line with the same " : " delimiter it split on.
+			"definition list with a classifier round-trips through the RawBlock reconstruction",
+			"Term : classifier\n    Definition body.\n",
+			richdoc.New().RawBlock("rst", "Term : classifier\n    Definition body.").Doc(),
+		},
+		{
 			"line block becomes a RawBlock",
 			"| line one\n| line two\n",
 			richdoc.New().RawBlock("rst", "| line one\n| line two").Doc(),
