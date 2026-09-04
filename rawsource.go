@@ -149,6 +149,50 @@ func rawTopic(el *doctree.Element) string {
 	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
 }
 
+// rawCompound reconstructs ".. compound::" (docutils/rst v0.42.0+) as
+// literal reST source — richdoc has no compound-paragraph block type
+// either. Structurally identical to one of the nine generic admonitions
+// rawAdmonition already handles (no title, :class:/:name: options, free-
+// form content), just a different directive name, so this is a thin
+// wrapper rather than a duplicate implementation.
+func rawCompound(el *doctree.Element) string {
+	return rawAdmonition(el)
+}
+
+// rawContainer reconstructs ".. container::" (docutils/rst v0.42.0+) as
+// literal reST source — richdoc has no container block type either.
+// Unlike rawAdmonition/rawCompound, a container's classes come from its
+// own directive ARGUMENT, not a :class: option (real docutils' own
+// Container directive has no :class: in its option_spec at all, only
+// :name:) — so the "class" attribute is written into the header's own
+// argument position instead of a body option line.
+func rawContainer(el *doctree.Element) string {
+	header := ".. container::"
+	if class := el.Attr("class"); class != "" {
+		header += " " + class
+	}
+	var bodyLines []string
+	if name := el.Attr("name"); name != "" {
+		bodyLines = append(bodyLines, ":name: "+name)
+	}
+	var contentParts []string
+	for _, c := range el.Children {
+		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
+			contentParts = append(contentParts, t)
+		}
+	}
+	if len(contentParts) > 0 {
+		if len(bodyLines) > 0 {
+			bodyLines = append(bodyLines, "")
+		}
+		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
+	}
+	if len(bodyLines) == 0 {
+		return header
+	}
+	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+}
+
 // rawFigure reconstructs ".. figure::" (docutils/rst v0.29.0+) as
 // literal reST source — richdoc has no figure/caption/legend concept
 // either. Unlike rawTopic/rawAdmonition, a figure's own children are a

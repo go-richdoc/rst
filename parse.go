@@ -291,6 +291,24 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// falls back to a RawBlock rather than silently unwrapping to
 		// the bare content and losing which admonition it was.
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawAdmonition(el)}}
+	case doctree.TagCompound:
+		// docutils/rst v0.42.0+ -- structurally identical to the generic
+		// admonitions above, just a different tag/directive name; richdoc
+		// has no compound-paragraph block type either.
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawCompound(el)}}
+	case doctree.TagContainer:
+		// docutils/rst v0.42.0+ -- richdoc has no container block type
+		// either, and unlike TagCompound this needed its own rawContainer
+		// (the classes come from the directive's own ARGUMENT, not a
+		// :class: option -- see that function's own doc comment). Without
+		// an explicit case here this fell through to the generic
+		// convertBlocks default below, which recurses into the
+		// container's own children directly -- silently unwrapping it
+		// and losing both the fact that it WAS a container and its own
+		// class/name attributes, the same shape as every other
+		// already-handled directive in this switch, just for a whole
+		// top-level tag instead of a child nested under one.
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawContainer(el)}}
 	case doctree.TagTopic, doctree.TagSidebar:
 		// docutils/rst v0.28.0+ -- richdoc has no topic/sidebar block
 		// type either, so like the admonitions above this falls back to
