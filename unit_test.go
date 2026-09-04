@@ -383,6 +383,29 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. sidebar::\n\n   No title sidebar.").Doc(),
 		},
 		{
+			// docutils/rst v0.42.0+ — richdoc has no compound-paragraph
+			// block type either; before rawCompound existed this fell
+			// through the generic default case, silently unwrapping to
+			// the bare content and losing the fact it was a compound.
+			"compound becomes a RawBlock, not silently unwrapped to its bare content",
+			".. compound:: content may start on same line\n\n   second paragraph\n",
+			richdoc.New().RawBlock("rst", ".. compound::\n\n   content may start on same line\n\n   second paragraph").Doc(),
+		},
+		{
+			// docutils/rst v0.42.0+ — a container's classes come from
+			// its own directive ARGUMENT, not a :class: option, unlike
+			// every admonition/compound above — rawContainer's own
+			// distinguishing case.
+			"container's argument-derived classes land on the header line, not a :class: option",
+			".. container:: custom\n\n   Some text.\n",
+			richdoc.New().RawBlock("rst", ".. container:: custom\n\n   Some text.").Doc(),
+		},
+		{
+			"a bare container with a :name: option becomes a RawBlock, not silently unwrapped to its bare content",
+			".. container::\n   :name: my container\n\n   Some text.\n",
+			richdoc.New().RawBlock("rst", ".. container::\n\n   :name: my container\n\n   Some text.").Doc(),
+		},
+		{
 			// docutils/rst v0.29.0+ — a standalone block-level image
 			// wraps richdoc's own real Image inline type in a
 			// single-inline Paragraph, richdoc's nearest non-lossy
