@@ -218,6 +218,39 @@ func rawRubric(el *doctree.Element) string {
 	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
 }
 
+// rawDecoration reconstructs docutils/rst v0.48.0's <decoration> — a
+// document-level SINGLETON wrapping up to one <header> and one <footer>
+// (in that fixed order, regardless of which was declared first in the
+// source: docutils/rst always normalizes it that way, see that
+// package's own doc comment) — as literal reST source, one ".. header::"/
+// ".. footer::" block per child present, joined by a blank line when
+// both are. richdoc has no document-header/footer concept at all.
+// Neither directive has any options (real docutils' own Header/Footer
+// declare no option_spec), so this is simpler than rawAdmonition/
+// rawTopic: just the directive name and its content, no :class:/:name:
+// line ever needed.
+func rawDecoration(el *doctree.Element) string {
+	var parts []string
+	for _, c := range el.Children {
+		ce, ok := c.(*doctree.Element)
+		if !ok {
+			continue
+		}
+		var contentParts []string
+		for _, cc := range ce.Children {
+			if t := strings.TrimSpace(doctree.AsText(cc)); t != "" {
+				contentParts = append(contentParts, t)
+			}
+		}
+		header := ".. " + ce.Tag + "::"
+		if len(contentParts) > 0 {
+			header += "\n\n" + indentBlock(strings.Join(contentParts, "\n\n"))
+		}
+		parts = append(parts, header)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // rawFigure reconstructs ".. figure::" (docutils/rst v0.29.0+) as
 // literal reST source — richdoc has no figure/caption/legend concept
 // either. Unlike rawTopic/rawAdmonition, a figure's own children are a

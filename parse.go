@@ -296,6 +296,20 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// admonitions above, just a different tag/directive name; richdoc
 		// has no compound-paragraph block type either.
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawCompound(el)}}
+	case doctree.TagDecoration:
+		// docutils/rst v0.48.0+ -- a document-level singleton wrapping up
+		// to one <header> and one <footer>; richdoc has no document-
+		// header/footer concept at all. Without an explicit case here
+		// this fell through to the generic convertBlocks default below,
+		// which recurses into <header>/<footer>'s own children directly
+		// -- silently unwrapping the whole thing into ordinary paragraphs
+		// indistinguishable from body content, the same "new TOP-LEVEL
+		// tag, no matching case" shape as v0.42.0's container/compound
+		// and v0.45.0's rubric -- caught by checking parse.go's own
+		// switch statement for the new tag names BEFORE trusting the
+		// suite staying green (no existing fixture exercises header/
+		// footer at all, so a green suite here proves nothing).
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawDecoration(el)}}
 	case doctree.TagContainer:
 		// docutils/rst v0.42.0+ -- richdoc has no container block type
 		// either, and unlike TagCompound this needed its own rawContainer

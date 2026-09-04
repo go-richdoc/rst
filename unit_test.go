@@ -406,6 +406,24 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. container::\n\n   :name: my container\n\n   Some text.").Doc(),
 		},
 		{
+			// docutils/rst v0.48.0+ — richdoc has no document-header/
+			// footer concept either; before rawDecoration existed this
+			// fell through the generic default case, silently unwrapping
+			// <header>'s own content into an ordinary paragraph
+			// indistinguishable from body content.
+			"header becomes a RawBlock, not silently unwrapped to its bare content",
+			".. header:: My header\n\nBody.\n",
+			richdoc.New().RawBlock("rst", ".. header::\n\n   My header").P(richdoc.Txt("Body.")).Doc(),
+		},
+		{
+			// header always comes before footer in the reconstructed
+			// source, regardless of declaration order in the input —
+			// docutils/rst's own <decoration> normalizes this already.
+			"header/footer declared in either order reconstruct with header always first",
+			".. footer:: even if declared first\n.. header:: header appears first\n\nBody.\n",
+			richdoc.New().RawBlock("rst", ".. header::\n\n   header appears first\n\n.. footer::\n\n   even if declared first").P(richdoc.Txt("Body.")).Doc(),
+		},
+		{
 			// docutils/rst v0.45.0+ — richdoc has no rubric block type
 			// either; before rawRubric existed this fell through the generic
 			// default case, which recurses into the rubric's own children
