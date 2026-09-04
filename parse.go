@@ -256,6 +256,22 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		return []richdoc.Block{richdoc.ThematicBreak{}}
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock:
 		return []richdoc.Block{richdoc.CodeBlock{Text: doctree.AsText(el)}}
+	case doctree.TagMathBlock:
+		// docutils/rst v0.52.0+ (".. math::") — richdoc has a REAL
+		// block-math type of its own, so this maps straight onto it
+		// rather than taking the RawBlock fallback admonitions/topics/
+		// figure/container/compound/rubric all need: inventing a
+		// RawBlock for something richdoc can already represent properly
+		// would be a real regression in fidelity, not a neutral
+		// simplification (the same call the v0.29.0 <image> case made,
+		// where richdoc's own Image type was likewise already waiting).
+		// Without any case at all this fell through to the generic
+		// convertBlocks default, which has no notion of a bare Text
+		// child at block level and DROPPED the math source entirely —
+		// caught by checking parse.go's own switch for the new tag name
+		// BEFORE trusting the suite staying green, which it did, since
+		// no existing fixture exercises a math directive.
+		return []richdoc.Block{richdoc.MathBlock{TeX: doctree.AsText(el)}}
 	case doctree.TagComment:
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawComment(el)}}
 	case doctree.TagRaw:
