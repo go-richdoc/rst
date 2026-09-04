@@ -309,6 +309,19 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// already-handled directive in this switch, just for a whole
 		// top-level tag instead of a child nested under one.
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawContainer(el)}}
+	case doctree.TagRubric:
+		// docutils/rst v0.45.0+ -- richdoc has no rubric block type
+		// either. Without an explicit case here this fell through to the
+		// generic convertBlocks default below, which recurses into the
+		// rubric's own children directly -- but those are INLINE nodes
+		// (Text, possibly emphasis/...), not block-level Elements, so
+		// convertBlocks finds nothing it recognizes and the rubric's own
+		// text is silently DROPPED ENTIRELY, not just unwrapped -- a
+		// worse loss than container's own (which at least kept the bare
+		// content). Caught by testing directly, not just the test suite
+		// staying green (nothing in the existing suite exercised rubric
+		// at all).
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawRubric(el)}}
 	case doctree.TagTopic, doctree.TagSidebar:
 		// docutils/rst v0.28.0+ -- richdoc has no topic/sidebar block
 		// type either, so like the admonitions above this falls back to

@@ -193,6 +193,31 @@ func rawContainer(el *doctree.Element) string {
 	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
 }
 
+// rawRubric reconstructs ".. rubric:: TEXT" (docutils/rst v0.45.0+) as
+// literal reST source — richdoc has no rubric block type either.
+// Unlike rawAdmonition/rawTopic, a rubric's own text ISN'T a block-level
+// <title> child, it's the rubric element's OWN inline content directly
+// (no wrapping title node at all — see runRubricDirective's own doc
+// comment), so this reads it via doctree.AsText on the element itself,
+// the same lossy-but-content-preserving flattening literal_block's own
+// TagLiteralBlock case already relies on for a parsed-literal's inline
+// children (v0.45.0 also added those) — inline styling within the
+// rubric's own text is lost, its actual text content isn't.
+func rawRubric(el *doctree.Element) string {
+	header := ".. rubric:: " + doctree.AsText(el)
+	var bodyLines []string
+	if class := el.Attr("class"); class != "" {
+		bodyLines = append(bodyLines, ":class: "+class)
+	}
+	if name := el.Attr("name"); name != "" {
+		bodyLines = append(bodyLines, ":name: "+name)
+	}
+	if len(bodyLines) == 0 {
+		return header
+	}
+	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+}
+
 // rawFigure reconstructs ".. figure::" (docutils/rst v0.29.0+) as
 // literal reST source — richdoc has no figure/caption/legend concept
 // either. Unlike rawTopic/rawAdmonition, a figure's own children are a
