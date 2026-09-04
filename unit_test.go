@@ -406,6 +406,17 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. container::\n\n   :name: my container\n\n   Some text.").Doc(),
 		},
 		{
+			// docutils/rst v0.45.0+ — richdoc has no rubric block type
+			// either; before rawRubric existed this fell through the generic
+			// default case, which recurses into the rubric's own children
+			// directly — but those are INLINE nodes, not block-level
+			// Elements, so the rubric's own text was silently DROPPED
+			// entirely, not just unwrapped.
+			"rubric becomes a RawBlock, not silently dropped entirely",
+			".. rubric:: A Rubric\n   :class: foo\n",
+			richdoc.New().RawBlock("rst", ".. rubric:: A Rubric\n\n   :class: foo").Doc(),
+		},
+		{
 			// docutils/rst v0.29.0+ — a standalone block-level image
 			// wraps richdoc's own real Image inline type in a
 			// single-inline Paragraph, richdoc's nearest non-lossy
