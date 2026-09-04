@@ -392,6 +392,19 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. compound::\n\n   content may start on same line\n\n   second paragraph").Doc(),
 		},
 		{
+			// docutils/rst v0.52.0+ — UNLIKE the RawBlock fallbacks above,
+			// richdoc has a REAL block-math type, so this maps straight
+			// onto it (same call as the <image> case: a real fit already
+			// existed, and a RawBlock would have been a fidelity
+			// regression). Before this case existed the math source was
+			// DROPPED entirely, not merely unwrapped — and note Write
+			// could already EMIT ".. math::" from a richdoc.MathBlock
+			// (see TestWrite), so this closes a genuine round-trip gap.
+			"a math directive parses back to richdoc's own MathBlock, one per blank-line-separated chunk",
+			".. math::\n\n   1+1=2\n\n   E = mc^2\n",
+			richdoc.New().MathBlock("1+1=2").MathBlock("E = mc^2").Doc(),
+		},
+		{
 			// docutils/rst v0.42.0+ — a container's classes come from
 			// its own directive ARGUMENT, not a :class: option, unlike
 			// every admonition/compound above — rawContainer's own
