@@ -102,7 +102,19 @@ func writeLink(l richdoc.Link) string {
 			return l.URL
 		}
 	}
-	return "`" + plainText(l.Inlines) + " <" + l.URL + ">`_"
+	// ANONYMOUS ("`__"), not named ("`_"). docutils' Inliner.phrase_ref
+	// appends an implicit <target> alongside the reference for the named
+	// form only — and that target claims the link TEXT as a reference
+	// name, which a link has no business doing. When the text matched an
+	// anchor already in the document ("_`important term`" plus a link
+	// reading "important term"), the stray claim collided with it, and
+	// docutils/rst v0.57.0+ reports `Duplicate implicit target name` for
+	// exactly that. Which is how this surfaced: the round-trip test caught
+	// the writer emitting reST that no longer read back as what it was
+	// written from. The anonymous form produces the same
+	// <reference refuri="..."> with NO target at all — verified against
+	// the reference implementation — which is what a link means here.
+	return "`" + plainText(l.Inlines) + " <" + l.URL + ">`__"
 }
 
 // writeCrossRef renders a cross-reference. A citation (reST citations are
