@@ -3,7 +3,7 @@ module github.com/go-richdoc/rst
 go 1.26.4
 
 require (
-	github.com/go-docutils/docutils v0.61.0
+	github.com/go-docutils/docutils v0.62.0
 	github.com/go-richdoc/richdoc v0.3.0
 	github.com/go-tex/engine v0.207.0
 )
