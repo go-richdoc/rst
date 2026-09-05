@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	docrst "github.com/go-docutils/docutils/rst"
 	"github.com/go-richdoc/richdoc"
 )
 
@@ -147,7 +148,17 @@ func writeHeading(h richdoc.Heading) string {
 	text := writeInlinesPlain(h.Inlines)
 	under := strings.Repeat(string(titleChars[idx]), displayWidth(text))
 	s := text + "\n" + under
-	if h.ID != "" {
+	// Emit an explicit target ONLY when the heading's own title would not
+	// already produce this id. reStructuredText gives every section an
+	// implicit target named after its title, so ".. _top:" before a
+	// heading called "Top" does not add an anchor -- it adds a SECOND
+	// claim on the same name, which docutils reports as
+	// `Duplicate implicit target name: "top".` (docutils/rst v0.57.0+
+	// ports that diagnostic, which is how this surfaced: the round-trip
+	// test caught the writer emitting reST that no longer read back as
+	// what it was written from). MakeID is the upstream rule itself
+	// rather than a local reimplementation, so the two cannot drift.
+	if h.ID != "" && h.ID != docrst.MakeID(text) {
 		s = ".. _" + h.ID + ":\n\n" + s
 	}
 	return s

@@ -890,3 +890,92 @@ func TestWriteContains(t *testing.T) {
 		})
 	}
 }
+
+// TestAnchorIDSurvivesDuplicateNames covers a real defect introduced
+// downstream by docutils/rst v0.57.0: a target whose reference name
+// collides with another's is INVALIDATED upstream, its name moved from
+// "name" to "dupname". This package read Anchor.ID straight off "name",
+// so two "_`term`" targets in one document both arrived with no name at
+// all and produced two anchors with an EMPTY id -- indistinguishable from
+// each other and useless as link destinations. The upstream "id"
+// attribute is always present and already disambiguated, so it is the
+// fallback. Nothing in the existing suite caught this: the tests stayed
+// green while the anchors quietly went nameless.
+func TestAnchorIDSurvivesDuplicateNames(t *testing.T) {
+	doc, err := Parse([]byte("See _`term one` and also _`term one` again.\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	for _, b := range doc.Blocks {
+		p, ok := b.(richdoc.Paragraph)
+		if !ok {
+			continue
+		}
+		for _, in := range p.Inlines {
+			if a, ok := in.(richdoc.Anchor); ok {
+				ids = append(ids, a.ID)
+			}
+		}
+	}
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 anchors, got %d (%q)", len(ids), ids)
+	}
+	for _, id := range ids {
+		if id == "" {
+			t.Errorf("an anchor came back with an EMPTY id: %q", ids)
+		}
+	}
+	if ids[0] == ids[1] {
+		t.Errorf("both anchors share one id %q; duplicates must stay distinguishable", ids[0])
+	}
+}
+
+// TestHeadingTargetOnlyWhenItAddsSomething pins the writer to emitting
+// ".. _id:" before a heading ONLY when the heading's own title would not
+// already produce that id. reST gives every section an implicit target
+// named after its title, so emitting it regardless does not add an anchor
+// -- it adds a second claim on the same name, which reads back as a
+// `Duplicate implicit target name` diagnostic.
+func TestHeadingTargetOnlyWhenItAddsSomething(t *testing.T) {
+	redundant := &richdoc.Document{Blocks: []richdoc.Block{
+		richdoc.Heading{Level: 1, ID: "top", Inlines: []richdoc.Inline{richdoc.Text{Value: "Top"}}},
+	}}
+	out, err := Write(redundant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), ".. _top:") {
+		t.Errorf("wrote a redundant explicit target for an id the title already implies:\n%s", out)
+	}
+
+	needed := &richdoc.Document{Blocks: []richdoc.Block{
+		richdoc.Heading{Level: 1, ID: "custom-slug", Inlines: []richdoc.Inline{richdoc.Text{Value: "Top"}}},
+	}}
+	out, err = Write(needed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), ".. _custom-slug:") {
+		t.Errorf("dropped an explicit target the title does NOT imply:\n%s", out)
+	}
+}
+
+// TestLinkIsAnonymous pins the writer to the anonymous embedded-URI form.
+// The named form ("`text <url>`_") makes docutils append an implicit
+// target claiming the link TEXT as a reference name, which collides with
+// any real target of that name elsewhere in the document.
+func TestLinkIsAnonymous(t *testing.T) {
+	d := &richdoc.Document{Blocks: []richdoc.Block{
+		richdoc.Paragraph{Inlines: []richdoc.Inline{
+			richdoc.Link{URL: "#anchor", Inlines: []richdoc.Inline{richdoc.Text{Value: "some text"}}},
+		}},
+	}}
+	out, err := Write(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "`some text <#anchor>`__") {
+		t.Errorf("link was not written in the anonymous form:\n%s", out)
+	}
+}

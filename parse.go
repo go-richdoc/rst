@@ -708,7 +708,7 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		if len(el.Children) == 0 {
 			return nil
 		}
-		return []richdoc.Inline{richdoc.Anchor{ID: el.Attr("name"), Inlines: c.convertInlines(el.Children)}}
+		return []richdoc.Inline{richdoc.Anchor{ID: anchorID(el), Inlines: c.convertInlines(el.Children)}}
 	case doctree.TagTitleReference:
 		// The nearest common rendering (italics) for a construct richdoc has
 		// no dedicated node for; see the package doc comment.
@@ -819,4 +819,21 @@ func subSupRole(tag string) string {
 		return "sub"
 	}
 	return "sup"
+}
+
+// anchorID picks the id for an inline internal target's Anchor. "name" is
+// the natural choice and stays the default, but it is NOT always there:
+// since docutils/rst v0.57.0 a target whose name collides with another's
+// is INVALIDATED, its name moved to "dupname" — so two "_`term`" targets
+// in one document both arrived here with no "name" at all and produced
+// two anchors with an EMPTY id, indistinguishable from each other and
+// useless as link destinations. The "id" attribute is always present and
+// already disambiguated upstream ("term", "term-1"), so it is the right
+// fallback; "dupname" is deliberately not used, since the whole point of
+// the invalidation is that the name no longer identifies one place.
+func anchorID(el *doctree.Element) string {
+	if name := el.Attr("name"); name != "" {
+		return name
+	}
+	return el.Attr("id")
 }
