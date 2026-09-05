@@ -394,6 +394,18 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawMeta(el)}}
 	case doctree.TagTable:
 		return []richdoc.Block{c.convertTable(el)}
+	case doctree.TagPending:
+		// docutils/rst v0.64.0+ emits <pending> for a directive whose real
+		// work happens in a TRANSFORM (".. class::", ".. sectnum::",
+		// ".. target-notes::"). Its only child is a DEBUG DUMP of the
+		// transform's name and options, not content, so it is dropped.
+		//
+		// The default branch below already drops an unrecognized tag, so
+		// this case changes nothing today -- it is here because being
+		// dropped by ACCIDENT and dropped ON PURPOSE read identically in
+		// the output and not at all identically to the next person
+		// touching this switch.
+		return nil
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
 		// Invisible bookkeeping nodes: a hyperlink target's references
 		// already carry a resolved refuri directly (see the rst package's
