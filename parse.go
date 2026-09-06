@@ -30,6 +30,15 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// CONTENT once it reaches a converted document.
 	opts := docrst.DefaultOptions()
 	opts.ReportUnknownDirectives = false
+	// Same reasoning for an unknown ROLE: a Sphinx ":doc:" reference is
+	// not an error to a reader, it is text, and convertRole preserves it
+	// as a RawInline carrying the role name.
+	opts.ReportUnknownRoles = false
+	// The opposite direction, and the only one of the four this package
+	// turns ON: Document.Meta IS the promoted docinfo (see leadingMeta and
+	// docinfoToMeta). docutils/rst defaults it off because DocInfo is one
+	// of docutils' TRANSFORMS, so a bare parse leaves a plain field list.
+	opts.PromoteDocInfo = true
 	doc := docrst.ParseWithOptions(string(src), opts)
 	c := &converter{
 		footnoteDefs: map[string]*doctree.Element{},
