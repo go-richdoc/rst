@@ -39,6 +39,12 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// docinfoToMeta). docutils/rst defaults it off because DocInfo is one
 	// of docutils' TRANSFORMS, so a bare parse leaves a plain field list.
 	opts.PromoteDocInfo = true
+	// Likewise: this package renders footnotes, inlining each definition
+	// at its reference, so it needs the numbers and symbols
+	// transforms.references.Footnotes assigns. Without it an auto
+	// footnote arrives with no label and nothing matches a reference to
+	// its definition.
+	opts.NumberAutoFootnotes = true
 	doc := docrst.ParseWithOptions(string(src), opts)
 	c := &converter{
 		footnoteDefs: map[string]*doctree.Element{},
