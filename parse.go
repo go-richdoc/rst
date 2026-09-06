@@ -18,7 +18,19 @@ import (
 // tolerant parsing philosophy), so the error return exists only for symmetry
 // with [Write] and the other go-richdoc converters.
 func Parse(src []byte) (*richdoc.Document, error) {
-	doc := docrst.Parse(string(src))
+	// ReportUnknownDirectives OFF. docutils/rst v0.68.0+ defaults it on,
+	// because docutils' own PARSER raises "Unknown directive type" -- but
+	// this package converts a document for a reader, and a directive it
+	// has no semantics for still has CONTENT the author wrote. Left on,
+	// a Sphinx ".. toctree::" would become an error message and a
+	// literal block in the converted output; off, convertBlockNode
+	// reconstructs the directive as a RawBlock and the content survives.
+	// Same reasoning as the dangling-reference default (v0.66.0): a
+	// diagnostic aimed at an author writing reST becomes fabricated
+	// CONTENT once it reaches a converted document.
+	opts := docrst.DefaultOptions()
+	opts.ReportUnknownDirectives = false
+	doc := docrst.ParseWithOptions(string(src), opts)
 	c := &converter{
 		footnoteDefs: map[string]*doctree.Element{},
 		substDefs:    map[string]*doctree.Element{},
