@@ -45,6 +45,15 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// footnote arrives with no label and nothing matches a reference to
 	// its definition.
 	opts.NumberAutoFootnotes = true
+	// And the same for hyperlink resolution
+	// (transforms.references.Hyperlinks, off by default in docutils/rst
+	// v0.80.0+): convertReference sends the reader to a reference's
+	// refuri, so without this every resolvable link arrives carrying
+	// only the refname it points at and becomes plain text. The one
+	// test that caught this on the v0.80.0 bump was the section-anchor
+	// case -- a single case for a change that silently affects EVERY
+	// resolvable link in the package.
+	opts.ResolveReferences = true
 	doc := docrst.ParseWithOptions(string(src), opts)
 	c := &converter{
 		footnoteDefs: map[string]*doctree.Element{},
