@@ -137,23 +137,24 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
-			// docutils/rst v0.13.0+ rewrites a dangling reference to
-			// <problematic> and appends a trailing "Docutils System
-			// Messages" section (real docutils' own DanglingReferences +
-			// Messages transforms, simplified) instead of leaving it a
-			// bare, unresolved <reference>; neither <problematic> nor
-			// <system_message> has a dedicated conversion case (see
-			// parse.go's convertInlineElement/convertBlockNode), so this
-			// package's own generic fallbacks handle them: problematic's
-			// text passes through as plain richdoc.Text, and the
-			// section becomes an ordinary richdoc.Heading + Paragraph
-			// like any other section would.
-			"unresolved reference becomes problematic text plus a trailing system-messages section",
+			// An unresolved reference degrades to its own visible text and
+			// NOTHING else. docutils/rst v0.66.0+ leaves it a bare
+			// <reference> by default, the rewrite to <problematic> plus a
+			// trailing "Docutils System Messages" section having moved
+			// behind Options.ReportDanglingReferences (it is one of
+			// docutils' TRANSFORMS, not part of parsing).
+			//
+			// That is a real improvement here, not just a smaller tree.
+			// Neither <problematic> nor <system_message> has a dedicated
+			// conversion case, so the generic fallbacks used to turn the
+			// diagnostic into an ordinary Heading + Paragraph -- a
+			// fabricated "Docutils System Messages" chapter appearing
+			// inside the user's own converted document, indistinguishable
+			// from content they wrote.
+			"an unresolved reference degrades to plain text, with no fabricated diagnostics section",
 			"See `nowhere`_ now.\n",
 			richdoc.New().
 				P(richdoc.Txt("See nowhere now.")).
-				H(1, richdoc.Txt("Docutils System Messages")).
-				P(richdoc.Txt(`Unknown target name: "nowhere".`)).
 				Doc(),
 		},
 		{
