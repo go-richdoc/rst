@@ -130,8 +130,20 @@ func rawTopic(el *doctree.Element) string {
 	}
 	var contentParts []string
 	for _, c := range el.Children {
-		if ce, ok := c.(*doctree.Element); ok && (ce.Tag == doctree.TagTitle || ce.Tag == doctree.TagSubtitle) {
-			continue
+		if ce, ok := c.(*doctree.Element); ok {
+			switch ce.Tag {
+			case doctree.TagTitle, doctree.TagSubtitle:
+				continue
+			case doctree.TagPending:
+				// An INTERNAL node: docutils/rst v0.99.0+ gives
+				// ".. contents::" a <pending> child whose text is the
+				// parser's own ".. internal attributes:" block. parse.go
+				// already drops <pending> on the block path; this
+				// reconstruction walked it as content and leaked
+				// ".transform: docutils.transforms.parts.Contents" into
+				// the rendered document.
+				continue
+			}
 		}
 		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
 			contentParts = append(contentParts, t)
