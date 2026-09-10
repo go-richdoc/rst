@@ -5,6 +5,7 @@ package rst
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/go-docutils/docutils/doctree"
@@ -79,7 +80,7 @@ func rawAdmonition(el *doctree.Element) string {
 		if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagTitle {
 			continue
 		}
-		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
+		if t := rawChildSource(c); t != "" {
 			contentParts = append(contentParts, t)
 		}
 	}
@@ -145,7 +146,7 @@ func rawTopic(el *doctree.Element) string {
 				continue
 			}
 		}
-		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
+		if t := rawChildSource(c); t != "" {
 			contentParts = append(contentParts, t)
 		}
 	}
@@ -189,7 +190,7 @@ func rawContainer(el *doctree.Element) string {
 	}
 	var contentParts []string
 	for _, c := range el.Children {
-		if t := strings.TrimSpace(doctree.AsText(c)); t != "" {
+		if t := rawChildSource(c); t != "" {
 			contentParts = append(contentParts, t)
 		}
 	}
@@ -338,7 +339,10 @@ func rawFigure(el *doctree.Element) string {
 		}
 	}
 	if legend != nil {
-		if t := strings.TrimSpace(doctree.AsText(legend)); t != "" {
+		// The legend is a CONTAINER of block children, unlike the
+		// caption, which is a paragraph -- so it needs the block
+		// renderer or its own list comes out flattened.
+		if t := strings.TrimSpace(rawChildren(legend)); t != "" {
 			contentParts = append(contentParts, t)
 		}
 	}
@@ -712,4 +716,108 @@ func indentBlock(text string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// rawChildSource renders ONE block child back to reST for the raw*
+// helpers above. They all used doctree.AsText, which returns a node's
+// text with no structure at all -- so a bullet list inside an
+// admonition came out as "onetwo", its items concatenated with neither
+// bullets nor separators. The same loss applied to a list inside a
+// topic, container, compound or figure, all five having the identical
+// contentParts/AsText loop.
+//
+// Only the structures that a directive body actually tends to hold are
+// reconstructed; anything else keeps the AsText behaviour, which is
+// correct for a paragraph and honest for the rest. The list-shaped tags
+// delegate to the raw* helpers that already existed for them, so there
+// is one renderer per construct rather than two.
+func rawChildSource(n doctree.Node) string {
+	el, ok := n.(*doctree.Element)
+	if !ok {
+		return strings.TrimSpace(doctree.AsText(n))
+	}
+	switch el.Tag {
+	case doctree.TagBulletList:
+		bullet := el.Attr("bullet")
+		if bullet == "" {
+			bullet = "-"
+		}
+		return rawListItems(el, func(int) string { return bullet + " " })
+	case doctree.TagEnumeratedList:
+		// enumtype/prefix/suffix carry the enumerator's own shape; only
+		// the arabic form is reconstructed, the others keeping their
+		// numbers as written would need the counter docutils stores in
+		// "start" plus a numeral converter.
+		suffix := el.Attr("suffix")
+		if suffix == "" {
+			suffix = "."
+		}
+		start := 1
+		if v := el.Attr("start"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				start = n
+			}
+		}
+		return rawListItems(el, func(i int) string {
+			return el.Attr("prefix") + strconv.Itoa(start+i) + suffix + " "
+		})
+	case doctree.TagLiteralBlock:
+		return "::\n\n" + indentBlock(doctree.AsText(el))
+	case doctree.TagBlockQuote:
+		return indentBlock(rawChildren(el))
+	case doctree.TagFieldList:
+		return rawFieldList(el)
+	case doctree.TagDefinitionList:
+		return rawDefinitionList(el)
+	case doctree.TagLineBlock:
+		return rawLineBlock(el)
+	case doctree.TagOptionList:
+		return rawOptionList(el)
+	case doctree.TagAttention, doctree.TagCaution, doctree.TagDanger,
+		doctree.TagErrorAdmonition, doctree.TagHint, doctree.TagImportant,
+		doctree.TagNote, doctree.TagTip, doctree.TagWarningAdmonition,
+		doctree.TagAdmonition:
+		return rawAdmonition(el)
+	}
+	return strings.TrimSpace(doctree.AsText(el))
+}
+
+// rawListItems renders a list's items, marker() giving each its own
+// marker. A multi-block item keeps its blocks, indented under the
+// marker's own width.
+func rawListItems(list *doctree.Element, marker func(int) string) string {
+	var out []string
+	i := 0
+	for _, c := range list.Children {
+		item, ok := c.(*doctree.Element)
+		if !ok || item.Tag != doctree.TagListItem {
+			continue
+		}
+		m := marker(i)
+		body := rawChildren(item)
+		lines := strings.Split(body, "\n")
+		for k, l := range lines {
+			switch {
+			case k == 0:
+				lines[k] = m + l
+			case l == "":
+			default:
+				lines[k] = strings.Repeat(" ", len(m)) + l
+			}
+		}
+		out = append(out, strings.Join(lines, "\n"))
+		i++
+	}
+	return strings.Join(out, "\n")
+}
+
+// rawChildren renders every block child of el, blank-line separated.
+func rawChildren(el *doctree.Element) string {
+	var parts []string
+	for _, c := range el.Children {
+		if t := rawChildSource(c); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
