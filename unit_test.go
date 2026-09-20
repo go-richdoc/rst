@@ -1181,3 +1181,49 @@ func TestWideCharacterTableSurvivesRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// TestStandaloneAddressBoundaries pins what docutils/rst v0.111.0's
+// email start-boundary work means HERE. No code changed for it, which
+// is exactly why it is worth a test: a bump that needs no change is
+// indistinguishable from one whose effect nobody checked.
+//
+// Both cases are about content SURVIVING. An unrecognized scheme must
+// not sprout a mailto: link it never had, and an inline literal must
+// not be swallowed by an address scanning through it.
+func TestStandaloneAddressBoundaries(t *testing.T) {
+	cases := []struct {
+		name, source, want string
+	}{
+		{
+			// "/" is an email character, so this is one address.
+			"a slash-bearing address is one link",
+			"posted to comp.lang.python/python-list@python.org under a\n",
+			"posted to `comp.lang.python/python-list@python.org <mailto:comp.lang.python/python-list@python.org>`__ under a\n",
+		},
+		{
+			"an unrecognized scheme stays text",
+			"see svn+ssh://x@y.org/ and http://real.com here\n",
+			"see svn+ssh://x@y.org/ and http://real.com here\n",
+		},
+		{
+			"an inline literal is not swallowed by an address",
+			"text non-``@overload``-decorated more\n",
+			"text non-``@overload``-decorated more\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if string(out) != tc.want {
+				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+		})
+	}
+}
