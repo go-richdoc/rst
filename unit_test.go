@@ -1083,3 +1083,46 @@ func TestCodeBlockLanguageSurvivesRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// TestFootnoteDefinitionDroppedRegardlessOfOrder pins the decision that
+// a definition inlined at a reference is not ALSO emitted as a block.
+//
+// It used to depend on document ORDER: `consumed` was written at the
+// reference site, so a definition converted before the reference it
+// serves was emitted as a RawBlock on the way past and inlined
+// afterwards, printing twice. reST convention puts definitions last,
+// which is why only the reversed order was wrong.
+//
+// Both orders are asserted, plus the orphan control -- a definition
+// nothing references must STILL survive, or the fix would have turned a
+// duplication bug into a content-loss one.
+func TestFootnoteDefinitionDroppedRegardlessOfOrder(t *testing.T) {
+	cases := []struct {
+		name, source string
+		wantBlocks   int
+		wantDefsOut  int // times the body text appears in Write's output
+	}{
+		{"definition before reference", ".. [#a] the body\n\nRef [#a]_ here.\n", 1, 1},
+		{"definition after reference", "Ref [#a]_ here.\n\n.. [#a] the body\n", 1, 1},
+		{"citation, definition first", ".. [cit] the body\n\nRef [cit]_ here.\n", 1, 1},
+		{"orphan definition survives", ".. [#a] the body\n\nNo reference at all.\n", 2, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(doc.Blocks) != tc.wantBlocks {
+				t.Errorf("got %d blocks, want %d: %+v", len(doc.Blocks), tc.wantBlocks, doc.Blocks)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if n := strings.Count(string(out), "the body"); n != tc.wantDefsOut {
+				t.Errorf("the body appears %d times in the output, want %d:\n%s", n, tc.wantDefsOut, out)
+			}
+		})
+	}
+}
