@@ -69,6 +69,7 @@ func Parse(src []byte) (*richdoc.Document, error) {
 		substDefs:    map[string]*doctree.Element{},
 	}
 	c.collect(doc)
+	c.resolveConsumed()
 
 	meta, children := leadingMeta(doc.Children)
 
@@ -217,13 +218,33 @@ func topicText(topic *doctree.Element) string {
 
 // converter carries parse-wide state: the footnote/citation definitions
 // (keyed by their "name" attribute) and substitution definitions collected
-// by [converter.collect], and the set of names actually consumed while
-// converting, so an orphan definition (referenced by nothing) is still
-// preserved via [richdoc.RawBlock] rather than silently dropped.
+// by [converter.collect], the names some reference points at, and the set
+// resolved from the two, so an orphan definition (referenced by nothing)
+// is still preserved via [richdoc.RawBlock] rather than silently dropped.
 type converter struct {
 	footnoteDefs map[string]*doctree.Element
 	substDefs    map[string]*doctree.Element
+	referenced   map[string]bool
 	consumed     map[string]bool
+}
+
+// resolveConsumed decides, before any conversion, which definitions will
+// be inlined at a reference and so must NOT also be emitted as blocks.
+//
+// The rule is convertNoteRef's own, stated once: a reference resolves
+// when it names a definition that exists. Deriving it here rather than
+// letting each site decide keeps the two from drifting apart -- and
+// makes the outcome independent of document ORDER, which is what was
+// wrong before.
+func (c *converter) resolveConsumed() {
+	if c.consumed == nil {
+		c.consumed = map[string]bool{}
+	}
+	for name := range c.referenced {
+		if _, ok := c.footnoteDefs[name]; ok {
+			c.consumed[name] = true
+		}
+	}
 }
 
 // collect walks the whole tree once, before conversion proper, gathering
@@ -240,6 +261,24 @@ func (c *converter) collect(n doctree.Node) {
 	case doctree.TagFootnote, doctree.TagCitation:
 		if name := el.Attr("name"); name != "" {
 			c.footnoteDefs[name] = el
+		}
+	case doctree.TagFootnoteReference, doctree.TagCitationReference:
+		// Gathered in the SAME pre-pass as the definitions, because
+		// whether a definition is referenced must not depend on which
+		// of the two the conversion happens to reach first. It did:
+		// consumed was written at the reference SITE, so a document
+		// that puts its definitions BEFORE the references it serves --
+		// legal reST, and what a PEP's "References and Footnotes"
+		// section does when it precedes nothing -- emitted the
+		// definition as a RawBlock on the way past AND inlined it at
+		// the reference, so Parse -> Write printed it twice. reST
+		// convention puts definitions last, which is why the common
+		// case looked right.
+		if name := el.Attr("refname"); name != "" {
+			if c.referenced == nil {
+				c.referenced = map[string]bool{}
+			}
+			c.referenced[name] = true
 		}
 	case doctree.TagSubstitutionDef:
 		// Substitution names are case-SENSITIVE in docutils, unlike a
@@ -849,10 +888,6 @@ func (c *converter) convertNoteRef(el *doctree.Element) []richdoc.Inline {
 	if name == "" || !ok {
 		return []richdoc.Inline{richdoc.RawInline{Format: "rst", Text: rawNoteRef(el)}}
 	}
-	if c.consumed == nil {
-		c.consumed = map[string]bool{}
-	}
-	c.consumed[name] = true
 	return []richdoc.Inline{richdoc.Footnote{Blocks: c.convertBlocks(noteBody(def), 1)}}
 }
 
