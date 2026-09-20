@@ -189,7 +189,17 @@ func runeLen(s string) int {
 }
 
 func writeCodeBlock(c richdoc.CodeBlock) string {
-	return "::\n\n" + indentBlock(c.Text)
+	// The other half of the language loss codeLanguage fixes (v0.108.0):
+	// this wrote "::" for every code block, so a language that HAD
+	// survived the read -- from a markdown fence, say, converted through
+	// richdoc -- was discarded on the way out. ".. code::" is the
+	// directive that carries one; "::" stays the shape when there is
+	// nothing to carry, since the directive form is noisier and a
+	// languageless block gains nothing from it.
+	if c.Language == "" {
+		return "::\n\n" + indentBlock(c.Text)
+	}
+	return ".. code:: " + c.Language + "\n\n" + indentBlock(c.Text)
 }
 
 func (w *writer) writeList(l richdoc.List) string {

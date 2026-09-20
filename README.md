@@ -46,7 +46,7 @@ separate reference tool (no tectonic-style external compiler, no Python
 | `block_quote` | `BlockQuote`, nested (docutils/rst v0.19.0+) when the source's own indentation varies within the run |
 | `attribution` (docutils/rst v0.19.0+ — a block quote's trailing "-- text" line) | a plain trailing `Paragraph` inside the enclosing `BlockQuote` — richdoc has no dedicated attribution concept, and the generic block fallback can't reach it at all (its children are bare inline nodes, not block-level `Paragraph` wrappers, the same shape `<raw>` needed its own case for), so this has a dedicated case too, preserving the text rather than dropping it |
 | `transition` | `ThematicBreak` |
-| `literal_block`, `doctest_block` | `CodeBlock` (no language; the literal/doctest distinction isn't preserved) |
+| `literal_block`, `doctest_block` | `CodeBlock`, taking its `Language` from the class list `.. code::` leaves behind (`["code", <language>, ...]`); a plain `::` block has no classes and stays languageless. The literal/doctest distinction isn't preserved |
 | `table` (simple or grid) | `Table` — a grid cell's row/column span carries through to `Cell.ColSpan`/`RowSpan` (richdoc v0.3.0+); a cell's own content, when it's more than one top-level block (a nested list, several paragraphs — grid tables allow full block content in a cell, `Cell` cannot), is flattened with each top-level block joined by a single space rather than the words running together |
 | `emphasis` / `strong` / `literal` | `Emph` / `Strong` / `Code` |
 | `title_reference` | `Emph` (the nearest common styling; richdoc has no dedicated node) |
@@ -104,7 +104,7 @@ marked" fact is lost.
 | `Heading` | underlined title (`=`, `-`, `~`, `"`, `^` by depth, clamped); a non-empty `ID` emits a leading `.. _id:` hyperlink target |
 | `Paragraph` | inline text |
 | `List` | `-` / `N.` items; a non-1 `Start` round-trips both ways as of `docutils/rst` v0.25.0+ (its own `enumerated_list` now carries a `start` attribute, read by `Parse`) — the list's own enumerator TYPE (alpha/roman) and format (`(N)`/`N)`) have no richdoc equivalent at all, so `Write` always re-renders as plain arabic `N.`, still a one-way gap on that narrower axis |
-| `CodeBlock` | `::` literal block |
+| `CodeBlock` | `.. code:: <language>` when it has one, plain `::` when it does not |
 | `BlockQuote` | indented block |
 | `Table` | a GRID table (`+---+`), column widths computed from actual cell content |
 | `MathBlock` | `.. math::` directive |

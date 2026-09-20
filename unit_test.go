@@ -980,3 +980,106 @@ func TestLinkIsAnonymous(t *testing.T) {
 		t.Errorf("link was not written in the anonymous form:\n%s", out)
 	}
 }
+
+// TestSphinxOnlyDirectiveOptionKeepsItsBlock pins the fifth Options
+// field this package sets (docutils/rst v0.107.0+). Faithful docutils
+// rejects an option a directive does not declare and replaces the whole
+// block with an error paragraph plus a literal_block of the source --
+// which, measured on that project's real-world corpus, would cost 32 of
+// 1564 documents their code or their maths.
+//
+// The assertion is deliberately about what SURVIVES rather than about
+// the absence of an error string: a test that only checked for the
+// message would also pass if the block vanished some other way.
+func TestSphinxOnlyDirectiveOptionKeepsItsBlock(t *testing.T) {
+	cases := []struct {
+		name, source string
+		want         richdoc.Block
+	}{
+		{
+			"sphinx :caption: on a code block",
+			".. code:: go\n   :caption: an example\n\n   x := 1\n",
+			richdoc.CodeBlock{Language: "go", Text: "x := 1"},
+		},
+		{
+			"sphinx :label: on an equation",
+			".. math::\n   :label: eq-euler\n\n   e^{i\\pi} + 1 = 0\n",
+			richdoc.MathBlock{TeX: `e^{i\pi} + 1 = 0`},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(doc.Blocks) != 1 {
+				t.Fatalf("got %d blocks, want exactly 1 (the block itself, with no error paragraph beside it): %+v",
+					len(doc.Blocks), doc.Blocks)
+			}
+			if !reflect.DeepEqual(doc.Blocks[0], tc.want) {
+				t.Errorf("block = %#v, want %#v", doc.Blocks[0], tc.want)
+			}
+		})
+	}
+}
+
+// TestCodeBlockLanguageSurvivesRoundTrip pins the PAIR. Both halves had
+// lost a code block's language independently: convertBlockNode never
+// read it off the <literal_block> class list, and writeCodeBlock wrote a
+// bare "::" for everything. Either one alone makes ".. code:: go" come
+// back as an unlabelled block, so the assertion is the round trip, not
+// one direction.
+//
+// The languageless case is the control: a plain "::" literal block must
+// still round-trip as "::", or the fix would have made every block claim
+// a language it never had.
+func TestCodeBlockLanguageSurvivesRoundTrip(t *testing.T) {
+	cases := []struct {
+		name, source, wantLang string
+	}{
+		{"code directive with a language", ".. code:: go\n\n   x := 1\n", "go"},
+		{"code-block alias", ".. code-block:: python\n\n   x = 1\n", "python"},
+		{"a plain literal block has none", "Text::\n\n   x := 1\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			var first richdoc.CodeBlock
+			for _, b := range doc.Blocks {
+				if cb, ok := b.(richdoc.CodeBlock); ok {
+					first = cb
+					break
+				}
+			}
+			if first.Language != tc.wantLang {
+				t.Fatalf("read: Language = %q, want %q", first.Language, tc.wantLang)
+			}
+
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			var second richdoc.CodeBlock
+			for _, b := range again.Blocks {
+				if cb, ok := b.(richdoc.CodeBlock); ok {
+					second = cb
+					break
+				}
+			}
+			if second.Language != tc.wantLang {
+				t.Errorf("round trip: Language = %q, want %q\nwritten:\n%s", second.Language, tc.wantLang, out)
+			}
+			if second.Text != first.Text {
+				t.Errorf("round trip changed the text: %q -> %q", first.Text, second.Text)
+			}
+		})
+	}
+}

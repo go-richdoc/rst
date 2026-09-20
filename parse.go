@@ -34,7 +34,16 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// not an error to a reader, it is text, and convertRole preserves it
 	// as a RawInline carrying the role name.
 	opts.ReportUnknownRoles = false
-	// The opposite direction, and the only one of the four this package
+	// And the third report flag, for the same reason once more
+	// (docutils/rst v0.107.0+): docutils' PARSER rejects an option a
+	// directive does not declare, so a sphinx ":caption:" on a code
+	// block or ":label:" on an equation replaces the whole block with an
+	// error paragraph. Measured on that project's real-world corpus, 32
+	// of 1564 files carry such an option -- 32 documents that would
+	// arrive here having LOST their code or their maths. Off, the option
+	// is simply ignored and the block converts.
+	opts.ReportUnknownDirectiveOptions = false
+	// The opposite direction, and the only one of the five this package
 	// turns ON: Document.Meta IS the promoted docinfo (see leadingMeta and
 	// docinfoToMeta). docutils/rst defaults it off because DocInfo is one
 	// of docutils' TRANSFORMS, so a bare parse leaves a plain field list.
@@ -291,7 +300,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 	case doctree.TagTransition:
 		return []richdoc.Block{richdoc.ThematicBreak{}}
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock:
-		return []richdoc.Block{richdoc.CodeBlock{Text: doctree.AsText(el)}}
+		return []richdoc.Block{richdoc.CodeBlock{Language: codeLanguage(el), Text: doctree.AsText(el)}}
 	case doctree.TagMathBlock:
 		// docutils/rst v0.52.0+ (".. math::") — richdoc has a REAL
 		// block-math type of its own, so this maps straight onto it
@@ -884,4 +893,32 @@ func anchorID(el *doctree.Element) string {
 		return name
 	}
 	return el.Attr("id")
+}
+
+// codeLanguage recovers a code block's language from the class list the
+// ".. code::" directive leaves on its <literal_block>. Found in
+// v0.108.0, while verifying a DIFFERENT change: every code block in
+// every converted document had arrived with an empty Language, because
+// nothing here had ever read one.
+//
+// docutils' CodeBlock.run (parsers/rst/directives/body.py, read
+// directly) builds the list as ["code"], then the language argument if
+// there is one, then whatever the author's own :class: adds. So the
+// language is the SECOND class, and only when the first is "code" -- a
+// plain "::" literal block carries no classes at all and must stay
+// languageless.
+//
+// The position is the only signal there is, and it is genuinely
+// ambiguous: ".. code:: c" and ".. code::" with ":class: c" produce the
+// identical class list, and docutils itself cannot tell them apart
+// afterwards either. Its own writers dodge the question by highlighting
+// at PARSE time with pygments and emitting token spans, so there is no
+// reference behaviour to copy here -- only the class list, read the way
+// the directive wrote it.
+func codeLanguage(el *doctree.Element) string {
+	classes := strings.Fields(el.Attrs["class"])
+	if len(classes) < 2 || classes[0] != "code" {
+		return ""
+	}
+	return classes[1]
 }
