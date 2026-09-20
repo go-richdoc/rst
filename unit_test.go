@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	docrst "github.com/go-docutils/docutils/rst"
 	"github.com/go-richdoc/richdoc"
 )
 
@@ -1122,6 +1123,60 @@ func TestFootnoteDefinitionDroppedRegardlessOfOrder(t *testing.T) {
 			}
 			if n := strings.Count(string(out), "the body"); n != tc.wantDefsOut {
 				t.Errorf("the body appears %d times in the output, want %d:\n%s", n, tc.wantDefsOut, out)
+			}
+		})
+	}
+}
+
+// TestWideCharacterTableSurvivesRoundTrip pins the writer to the same
+// metric the parser uses. docutils/rst v0.109.0 taught the PARSER that a
+// grid column is code points with East Asian Wide/Fullwidth counting
+// two; this package still padded cells by rune count, so a CJK cell
+// overflowed its column and a table it had just parsed came back as a
+// paragraph.
+//
+// The assertion is the round trip, because each half looks right alone:
+// the parse succeeds, and the written table looks plausible until you
+// count columns rather than characters.
+func TestWideCharacterTableSurvivesRoundTrip(t *testing.T) {
+	cases := []struct {
+		name, cell string
+	}{
+		{"ascii, the control", "cd"},
+		{"U+2026, one column", "ab…"},
+		{"CJK, two columns each", "中文"},
+		{"mixed", "a中b…"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Built wide enough for any of the cells above.
+			src := "+----------+-------+\n" +
+				"| " + tc.cell + strings.Repeat(" ", 9-docrst.TableColumnWidth(tc.cell)) + "| two   |\n" +
+				"+----------+-------+\n"
+			doc, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(doc.Blocks) != 1 {
+				t.Fatalf("source did not parse as one table: %+v", doc.Blocks)
+			}
+			if _, ok := doc.Blocks[0].(richdoc.Table); !ok {
+				t.Fatalf("parsed as %T, not a Table:\n%s", doc.Blocks[0], src)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			if len(again.Blocks) != 1 {
+				t.Fatalf("round trip produced %d blocks:\n%s", len(again.Blocks), out)
+			}
+			if _, ok := again.Blocks[0].(richdoc.Table); !ok {
+				t.Errorf("round trip turned the table into %T; the written table's rows do not line up with its borders:\n%s",
+					again.Blocks[0], out)
 			}
 		})
 	}

@@ -167,11 +167,19 @@ func writeHeading(h richdoc.Heading) string {
 // displayWidth returns a heading's own underline length: at least 1 (a
 // zero-width underline isn't valid reST even for an empty title), never
 // less than the rune count (len(s) in bytes would under-count a multi-byte
-// title). Table-cell padding math needs the PLAIN rune count instead — an
-// empty cell has to pad as 0 characters wide, not 1 — see runeLen; using
-// this function there was a real bug (a genuinely empty padding cell came
-// out one character narrower than its column, throwing off every column
-// after it in that row).
+// title).
+//
+// A title underline is NOT the rule a TABLE column follows, and that was
+// checked against real docutils rather than assumed: the underline test
+// compares lengths in code points, so a two-character CJK title is
+// satisfied by a two-character underline. Table-cell padding needs
+// [docrst.TableColumnWidth] instead, which counts an East Asian Wide or
+// Fullwidth character as TWO columns because that is what the grid
+// itself is measured in (docutils/rst v0.110.0+). The minimum of 1
+// belongs here and not there: an empty cell has to pad as 0 characters
+// wide, and using this function for one was a real bug (a genuinely
+// empty padding cell came out one character narrower than its column,
+// throwing off every column after it in that row).
 func displayWidth(s string) int {
 	if n := runeLen(s); n > 0 {
 		return n
@@ -377,7 +385,7 @@ func widenColumns(widths []int, cells []spanCell) {
 	col := 0
 	for _, c := range cells {
 		if c.span == 1 {
-			if wd := runeLen(c.text); wd > widths[col] {
+			if wd := docrst.TableColumnWidth(c.text); wd > widths[col] {
 				widths[col] = wd
 			}
 		}
@@ -396,7 +404,7 @@ func widenSpannedColumns(widths []int, cells []spanCell) {
 	col := 0
 	for _, c := range cells {
 		if c.span > 1 {
-			need := runeLen(c.text) - spanTextWidth(widths, col, c.span)
+			need := docrst.TableColumnWidth(c.text) - spanTextWidth(widths, col, c.span)
 			if need > 0 {
 				widths[col+c.span-1] += need
 			}
@@ -439,7 +447,7 @@ func gridRow(cells []spanCell, widths []int) string {
 		// widths widenColumns/widenSpannedColumns already grew to fit this
 		// very cell (see writeTable).
 		wd := spanTextWidth(widths, col, c.span)
-		pad := wd - runeLen(c.text)
+		pad := wd - docrst.TableColumnWidth(c.text)
 		b.WriteString(" " + c.text + strings.Repeat(" ", pad) + " |")
 		col += c.span
 	}
