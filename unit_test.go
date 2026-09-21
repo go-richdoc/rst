@@ -1325,3 +1325,62 @@ func TestUnmodeledBodyKeepsItsBlocks(t *testing.T) {
 		})
 	}
 }
+
+// TestSimpleTableWithNonASCIISurvives pairs docutils/rst v0.115.0's
+// simple-table fix with this package's own writer. Both halves have to
+// agree on what a column is: upstream measures the source table in code
+// points (wide characters counting two), and Write measures the grid
+// table it emits with TableColumnWidth, the same rule.
+//
+// The assertion is that the emitted table re-parses to the same thing.
+// A width that is merely plausible produces a table that looks right and
+// comes back as a paragraph.
+func TestSimpleTableWithNonASCIISurvives(t *testing.T) {
+	cases := []struct{ name, cell string }{
+		{"ascii, the control", "two"},
+		{"an accented letter", "café"},
+		{"wide characters", "中文xxx"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := "=====  =======\na      b\n=====  =======\none    " + tc.cell + "\n=====  =======\n"
+			doc, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			tbl, ok := doc.Blocks[0].(richdoc.Table)
+			if !ok {
+				t.Fatalf("parsed as %T, not a Table", doc.Blocks[0])
+			}
+			if got := inlineText(tbl.Rows[0][1].Inlines); got != tc.cell {
+				t.Errorf("cell text = %q, want %q", got, tc.cell)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			if _, ok := again.Blocks[0].(richdoc.Table); !ok {
+				t.Fatalf("the written table came back as %T; its rows do not line up with its borders:\n%s",
+					again.Blocks[0], out)
+			}
+			if !reflect.DeepEqual(again.Blocks, doc.Blocks) {
+				t.Errorf("round trip changed the table:\n%s", out)
+			}
+		})
+	}
+}
+
+// inlineText joins a cell's inline text, for comparing against source.
+func inlineText(ins []richdoc.Inline) string {
+	var b strings.Builder
+	for _, in := range ins {
+		if t, ok := in.(richdoc.Text); ok {
+			b.WriteString(t.Value)
+		}
+	}
+	return b.String()
+}
