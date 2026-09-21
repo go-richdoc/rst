@@ -1384,3 +1384,65 @@ func inlineText(ins []richdoc.Inline) string {
 	}
 	return b.String()
 }
+
+// TestHeadingUnderlineIsWideEnough pins the underline a written heading
+// gets. docutils compares column_width(title) against len(underline)
+// (states.py:2888), so a title of five code points and seven COLUMNS
+// needs seven underline characters -- writing five produced a heading
+// that came back as a warning and a literal block instead of a section.
+//
+// The assertion is the ROUND TRIP rather than the underline's length: a
+// length that merely looks right is exactly what was here before.
+func TestHeadingUnderlineIsWideEnough(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		// An all-wide title has an EMPTY implicit slug, so its heading
+		// keeps a "section-N" fallback id and Write emits an explicit
+		// target to carry it -- which the re-parse disambiguates to
+		// "section-N-1". That drift is a separate defect about fallback
+		// anchors, not about underline width: this test checks the
+		// underline, not the id.
+		idDrifts bool
+	}{
+		{"ascii, the control", "Title\n=====\n\nbody\n", false},
+		{"a wide character in the middle", "Ti中tle\n=======\n\nbody\n", false},
+		{"all wide characters", "中文\n====\n\nbody\n", true},
+		{"a combining mark adds no column", "café\n=====\n\nbody\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			if len(again.Blocks) != len(doc.Blocks) {
+				t.Fatalf("round trip produced %d blocks, not %d -- the underline is too short, so the heading became a warning:\n%s",
+					len(again.Blocks), len(doc.Blocks), out)
+			}
+			// Whatever the id does, the heading must still BE a heading
+			// carrying its own text -- which is what a short underline
+			// destroys.
+			h1, ok1 := doc.Blocks[0].(richdoc.Heading)
+			h2, ok2 := again.Blocks[0].(richdoc.Heading)
+			if !ok1 || !ok2 {
+				t.Fatalf("heading did not survive: %T -> %T\n%s", doc.Blocks[0], again.Blocks[0], out)
+			}
+			if !reflect.DeepEqual(h1.Inlines, h2.Inlines) || h1.Level != h2.Level {
+				t.Errorf("heading changed: %#v -> %#v\n%s", h1, h2, out)
+			}
+			if tc.idDrifts {
+				return
+			}
+			if !reflect.DeepEqual(again.Blocks, doc.Blocks) {
+				t.Errorf("round trip changed the document:\n%s", out)
+			}
+		})
+	}
+}

@@ -169,10 +169,19 @@ func writeHeading(h richdoc.Heading) string {
 // less than the rune count (len(s) in bytes would under-count a multi-byte
 // title).
 //
-// A title underline is NOT the rule a TABLE column follows, and that was
-// checked against real docutils rather than assumed: the underline test
-// compares lengths in code points, so a two-character CJK title is
-// satisfied by a two-character underline. Table-cell padding needs
+// A title underline is NOT the rule a TABLE column follows, but it is
+// not the rune count either, which is what stood here until v0.116.0.
+// docutils compares column_width(title) against len(underline)
+// (states.py:2888), so a title of five code points and seven COLUMNS
+// needs seven underline characters. Writing five produced a heading
+// that came back as a warning and a literal block.
+//
+// That correction is worth its own line: the earlier claim here said
+// the test "compares lengths in code points, verified against real
+// docutils". It had been verified against a document too SHORT to form
+// a section, so the check never ran and both answers looked right.
+// [docrst.ColumnWidth] is the rule; [docrst.TableColumnWidth] is the
+// table one, and docutils genuinely keeps both. Table-cell padding needs
 // [docrst.TableColumnWidth] instead, which counts an East Asian Wide or
 // Fullwidth character as TWO columns because that is what the grid
 // itself is measured in (docutils/rst v0.110.0+). The minimum of 1
@@ -181,7 +190,7 @@ func writeHeading(h richdoc.Heading) string {
 // empty padding cell came out one character narrower than its column,
 // throwing off every column after it in that row).
 func displayWidth(s string) int {
-	if n := runeLen(s); n > 0 {
+	if n := docrst.ColumnWidth(s); n > 0 {
 		return n
 	}
 	return 1
