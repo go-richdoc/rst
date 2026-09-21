@@ -1227,3 +1227,48 @@ func TestStandaloneAddressBoundaries(t *testing.T) {
 		})
 	}
 }
+
+// TestUnderscoreAsteriskIsNotAReference pins what docutils/rst v0.112.0
+// means here. "bdist_*" is a plain sentence, not a reference to "bdist"
+// -- the character after a reference's trailing "_" is tested against
+// docutils' end_string_suffix, and "*" is not in it, however punctuation
+// -like it looks.
+//
+// The assertion is the ROUND TRIP, because this package escapes the
+// underscore and the asterisk on the way out: it has to, or the text it
+// just preserved would be read back as the reference it never was.
+func TestUnderscoreAsteriskIsNotAReference(t *testing.T) {
+	for _, source := range []string{
+		"Joe Smith, bdist_* to stdlib?\n",
+		"interned-state (SSTATE_*) as in 3.2\n",
+	} {
+		t.Run(strings.TrimSpace(source), func(t *testing.T) {
+			doc, err := Parse([]byte(source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			para, ok := doc.Blocks[0].(richdoc.Paragraph)
+			if !ok {
+				t.Fatalf("got %T, want a Paragraph", doc.Blocks[0])
+			}
+			if len(para.Inlines) != 1 {
+				t.Fatalf("the sentence was split into %d inlines, so something was read as markup: %+v",
+					len(para.Inlines), para.Inlines)
+			}
+			if txt, ok := para.Inlines[0].(richdoc.Text); !ok || txt.Value != strings.TrimSpace(source) {
+				t.Errorf("text = %#v, want the sentence back", para.Inlines[0])
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			if !reflect.DeepEqual(again.Blocks, doc.Blocks) {
+				t.Errorf("round trip changed the text:\nwritten: %q\nbefore:  %+v\nafter:   %+v", out, doc.Blocks, again.Blocks)
+			}
+		})
+	}
+}
