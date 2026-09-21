@@ -28,9 +28,18 @@ jobs:
             echo "$out"
             exit 1
           fi
+      # poppler is the foreign judge: says() reads the words back out of our
+      # PDF with pdftotext, so what is checked is what ANOTHER implementation
+      # finds rather than what this one believes it wrote. Without it the two
+      # tests that do that skip, and the lane is green over nothing.
+      - name: poppler, the foreign reader of what we write
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq poppler-utils
+
       - name: Vet
         run: CGO_ENABLED=0 go vet ./...
       - name: Test with coverage (race)
+        env:
+          RICHDOC_REQUIRE_POPPLER: "1"
         run: go test -race -covermode=atomic -coverprofile=cover.out ./...
       - name: Enforce coverage floor (94%)
         # Unlike this org's other converters, this package walks a doctree
