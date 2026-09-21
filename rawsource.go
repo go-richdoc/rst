@@ -17,13 +17,16 @@ import (
 // definition). docutils/rst's doctree keeps no byte-offset back-reference
 // into the original source for these, so the text below is a resynthesis
 // from parsed structure, not a verbatim slice — semantically equivalent
-// reST, not necessarily byte-identical to what was typed. Field/definition
-// list content is flattened with [flattenBody], which joins each child
-// block's text with a single space: multi-paragraph or richly-marked-up
-// field content loses its internal structure and inline styling here, an
-// accepted cost of routing an unmodeled construct through [flattenText]
-// rather than a second full inline-to-reST emitter just for this fallback
-// path (see [Write]'s emitter for the one that matters: ordinary body text).
+// reST, not necessarily byte-identical to what was typed. A footnote,
+// field, definition or option-list body goes through [rawBlockBody] and
+// is hung under its own marker by [hangUnder], so a multi-paragraph body
+// keeps its paragraphs and a list inside one keeps its items. That
+// replaced a helper joining each child block's text with a single SPACE,
+// which turned two paragraphs into one sentence -- the same flattening
+// removed from five other places in v0.99.0 and left in these four.
+// Inline STYLING inside such a body is still lost: rendering it would
+// need a second full inline-to-reST emitter just for this fallback path
+// (see [Write]'s emitter for the one that matters: ordinary body text).
 
 func rawComment(el *doctree.Element) string {
 	text := doctree.AsText(el)
@@ -434,12 +437,12 @@ func rawFieldList(el *doctree.Element) string {
 			case doctree.TagFieldName:
 				name = doctree.AsText(fe)
 			case doctree.TagFieldBody:
-				body = flattenBody(fe)
+				body = rawBlockBody(fe)
 			}
 		}
 		line := ":" + name + ":"
 		if body != "" {
-			line += " " + body
+			line = hangUnder(line+" ", body, "   ")
 		}
 		lines = append(lines, line)
 	}
@@ -470,10 +473,10 @@ func rawDefinitionList(el *doctree.Element) string {
 			case doctree.TagClassifier:
 				term += " : " + doctree.AsText(ie)
 			case doctree.TagDefinition:
-				def = flattenBody(ie)
+				def = rawBlockBody(ie)
 			}
 		}
-		parts = append(parts, term+"\n    "+def)
+		parts = append(parts, hangUnder(term+"\n    ", def, "    "))
 	}
 	return strings.Join(parts, "\n\n")
 }
@@ -482,8 +485,8 @@ func rawDefinitionList(el *doctree.Element) string {
 // Description."). richdoc has no node for it at all (it's rarer even than
 // field/definition lists, which is why docutils/rst itself deferred it
 // initially — see that repo's rst/fieldlist.go), so like those two it falls
-// back to a RawBlock; the description is flattened the same lossy way (see
-// flattenBody) as a field body.
+// back to a RawBlock; the description goes through rawBlockBody, so a
+// multi-paragraph one keeps its paragraphs.
 func rawOptionList(el *doctree.Element) string {
 	var lines []string
 	for _, c := range el.Children {
@@ -501,12 +504,15 @@ func rawOptionList(el *doctree.Element) string {
 			case doctree.TagOptionGroup:
 				marker = rawOptionGroup(ie)
 			case doctree.TagDescription:
-				desc = flattenBody(ie)
+				desc = rawBlockBody(ie)
 			}
 		}
 		line := marker
 		if desc != "" {
-			line += "  " + desc
+			// Continuation lines align under the description's own
+			// column, which is where the marker and its two separating
+			// spaces end.
+			line = hangUnder(marker+"  ", desc, strings.Repeat(" ", len([]rune(marker))+2))
 		}
 		lines = append(lines, line)
 	}
@@ -645,10 +651,57 @@ func rawFootnoteDef(el *doctree.Element) string {
 		label = labelText(el)
 	}
 	header := ".. [" + label + "]"
-	if body := flattenBody(el); body != "" {
-		return header + " " + body
+	body := rawBlockBody(el)
+	if body == "" {
+		return header
 	}
-	return header
+	// The marker's own line carries the first line of the body; every
+	// line after it is indented under it, which is what makes a second
+	// paragraph part of the FOOTNOTE rather than a sibling of it.
+	return hangUnder(header+" ", body, "   ")
+}
+
+// hangUnder puts the first line of body after marker and indents every
+// line after it, which is what makes a second paragraph part of the
+// construct rather than a sibling of it. A blank line stays blank:
+// trailing spaces on it would be a change in the text.
+func hangUnder(marker, body, indent string) string {
+	lines := strings.Split(body, "\n")
+	out := marker + lines[0]
+	for _, l := range lines[1:] {
+		if l == "" {
+			out += "\n"
+			continue
+		}
+		out += "\n" + indent + l
+	}
+	return out
+}
+
+// rawBlockBody reconstructs a container's block children as reST,
+// skipping a <label> (whatever marker introduces the container already
+// carries it) and any <system_message> (a diagnostic about the source
+// is not part of the source).
+//
+// It goes through rawChildSource, like every other reconstruction in
+// this file since v0.99.0. The one it replaced joined doctree.AsText of
+// each child with a SPACE, so a two-paragraph footnote came back as one
+// paragraph and a list inside one came back as a run-on sentence --
+// the same flattening v0.99.0 removed from five other places and left
+// here.
+func rawBlockBody(el *doctree.Element) string {
+	var parts []string
+	for _, c := range el.Children {
+		if v, ok := c.(*doctree.Element); ok {
+			if v.Tag == doctree.TagLabel || v.Tag == doctree.TagSystemMessage {
+				continue
+			}
+		}
+		if t := rawChildSource(c); t != "" {
+			parts = append(parts, t)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // labelText reads a footnote/citation's rendered [Label] child (present for
@@ -662,33 +715,6 @@ func labelText(el *doctree.Element) string {
 		}
 	}
 	return el.Attr("name")
-}
-
-// flattenBody joins a container's child blocks' text with a single space,
-// skipping a leading [doctree.TagLabel] (a footnote/citation's own rendered
-// marker, redundant with the ".. [label]" this file already emits) and any
-// [doctree.TagSystemMessage] (docutils/rst v0.35.0+ nests a "Footnote/
-// Citation content expected." diagnostic directly inside an empty
-// footnote/citation — the parser's own warning about the body, not part
-// of it, and must not be reconstructed as if it were).
-func flattenBody(el *doctree.Element) string {
-	var parts []string
-	for _, c := range el.Children {
-		switch v := c.(type) {
-		case *doctree.Element:
-			if v.Tag == doctree.TagLabel || v.Tag == doctree.TagSystemMessage {
-				continue
-			}
-			if t := strings.TrimSpace(doctree.AsText(v)); t != "" {
-				parts = append(parts, t)
-			}
-		case *doctree.Text:
-			if t := strings.TrimSpace(v.Data); t != "" {
-				parts = append(parts, t)
-			}
-		}
-	}
-	return strings.Join(parts, " ")
 }
 
 // indentContinuation indents every line after the first by 3 spaces (a

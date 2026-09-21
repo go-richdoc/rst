@@ -1272,3 +1272,56 @@ func TestUnderscoreAsteriskIsNotAReference(t *testing.T) {
 		})
 	}
 }
+
+// TestUnmodeledBodyKeepsItsBlocks covers the four constructs richdoc has
+// no node for -- footnote/citation definitions, field lists, definition
+// lists and option lists -- which fall back to a RawBlock holding
+// resynthesised reST.
+//
+// All four built that reST by joining each child block's TEXT with a
+// single space, so a two-paragraph body came back as one paragraph and a
+// list inside one came back as a run-on sentence. v0.99.0 removed that
+// flattening from five other places in the same file and left these.
+//
+// The assertion is that the source comes back UNCHANGED, and then that
+// writing it again changes nothing further: a hanging indent that is
+// merely plausible can still drift on the second pass.
+func TestUnmodeledBodyKeepsItsBlocks(t *testing.T) {
+	cases := []struct{ name, source string }{
+		{"footnote, two paragraphs", "para\n\n.. [#f] body\n\n   second para\n"},
+		{"footnote, a list inside", "para\n\n.. [#f] body\n\n   - one\n   - two\n"},
+		{"footnote, single paragraph", "para\n\n.. [#f] single\n"},
+		{"field body, two paragraphs", "para\n\n:field: one\n\n   second para\n"},
+		{"field body, single", "para\n\n:field: single\n"},
+		{"definition, two paragraphs", "term\n    definition one\n\n    definition two\n"},
+		{"definition, single", "term\n    single def\n"},
+		{"option description, two paragraphs", "-f FILE  the file\n\n         a second paragraph\n"},
+		{"option description, single", "-f FILE  the file\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if string(out) != tc.source {
+				t.Errorf("round trip changed the source:\ngot  %q\nwant %q", out, tc.source)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			out2, err := Write(again)
+			if err != nil {
+				t.Fatalf("re-Write: %v", err)
+			}
+			if string(out2) != string(out) {
+				t.Errorf("a second pass drifted:\nfirst  %q\nsecond %q", out, out2)
+			}
+		})
+	}
+}
