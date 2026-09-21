@@ -97,6 +97,15 @@ reader still wants it). An abbreviation/acronym instead flattens straight to
 its plain text: the visible content stays readable, only the "this was
 marked" fact is lost.
 
+The reST resynthesised for those fallbacks keeps the body's BLOCK
+structure: a footnote, field, definition or option-list body with two
+paragraphs, or with a list inside it, comes back with them. Until
+v0.113.0 all four joined each child block's text with a single space, so
+two paragraphs became one sentence and a list became a run-on — the same
+flattening removed from five other places in v0.99.0 and left in these.
+Inline STYLING inside such a body is still lost; rendering it would need
+a second full inline-to-reST emitter just for this fallback path.
+
 ### Write (richdoc → reST)
 
 | richdoc node | reST output |
