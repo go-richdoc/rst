@@ -46,6 +46,12 @@ func everything() *richdoc.Document {
 func says(t *testing.T, data []byte) string {
 	t.Helper()
 	if _, err := exec.LookPath("pdftotext"); err != nil {
+		// A skipped judge reads exactly like a passing one. The lane that
+		// installs poppler sets this, so its absence there is a broken lane
+		// rather than a reason to go quietly green.
+		if os.Getenv("RICHDOC_REQUIRE_POPPLER") != "" {
+			t.Fatalf("RICHDOC_REQUIRE_POPPLER is set but pdftotext is not installed: %v", err)
+		}
 		t.Skip("pdftotext is not installed")
 	}
 	f, err := os.CreateTemp(t.TempDir(), "*.pdf")
