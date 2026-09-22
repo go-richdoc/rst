@@ -1578,3 +1578,47 @@ func TestInvisibleTrailersDoNotSurvive(t *testing.T) {
 		})
 	}
 }
+
+// TestMalformedTargetRoundTrips pins what docutils/rst v0.120.0 means
+// here. An unterminated backquote in a target name is a malformed
+// target: docutils captures the line as a COMMENT and warns, where this
+// parser used to invent a target named "`a" -- backquote and all.
+//
+// Downstream that difference is visible as content: a comment
+// round-trips verbatim, while the invented target was written back out
+// in the shape the parser had imagined rather than the one the author
+// typed.
+func TestMalformedTargetRoundTrips(t *testing.T) {
+	for _, tc := range []struct{ name, source, want string }{
+		{
+			"an unterminated backquote survives as written",
+			".. _`a: http://e.com\n",
+			".. _`a: http://e.com\n",
+		},
+		{
+			// The control: a well-formed phrase target still resolves.
+			"a closed backquote still resolves",
+			".. _`ab`: http://e.com\n\nSee `ab`_.\n",
+			"See `ab <http://e.com>`__.\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			// The "malformed hyperlink target." warning is a diagnostic
+			// and must not reach the document -- see TestKeepDiagnostics.
+			if len(doc.Blocks) != 1 {
+				t.Fatalf("got %d blocks, want 1: %+v", len(doc.Blocks), doc.Blocks)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if string(out) != tc.want {
+				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+		})
+	}
+}
