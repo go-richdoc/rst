@@ -1548,3 +1548,33 @@ func TestEscapedTargetResolves(t *testing.T) {
 		})
 	}
 }
+
+// TestInvisibleTrailersDoNotSurvive pins what docutils/rst v0.119.0
+// means here. A line's trailing whitespace is stripped by Python's
+// rules, not Go's, and a backslash with nothing after it escapes
+// nothing and disappears -- so neither reaches the converted document.
+//
+// The zero-width space is the control that matters: it is NOT
+// whitespace in either language, so it must come through untouched. A
+// fix that merely removed invisible characters would eat it.
+func TestInvisibleTrailersDoNotSurvive(t *testing.T) {
+	for _, tc := range []struct{ name, source, want string }{
+		{"a trailing backslash", "para\\\n", "para\n"},
+		{"a trailing no-break space", "term\u00a0\n    definition\n", "term\n    definition\n"},
+		{"a zero-width space survives", "term\u200b\n    definition\n", "term\u200b\n    definition\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if string(out) != tc.want {
+				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+		})
+	}
+}
