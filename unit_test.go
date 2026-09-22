@@ -76,7 +76,7 @@ func TestParse(t *testing.T) {
 			richdoc.New().OList(3, true,
 				richdoc.Item(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("third")}}),
 				richdoc.Item(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("fourth")}}),
-			).P(richdoc.Txt(`Enumerated list start value not ordinal-1: "3" (ordinal 3)`)).Doc(),
+			).Doc(), // the "not ordinal-1" diagnostic is dropped by default -- see TestKeepDiagnostics
 		},
 		{
 			"block quote and transition",
@@ -183,9 +183,10 @@ func TestParse(t *testing.T) {
 			// message's own Paragraph is otherwise identical.
 			"an unclosed inline-markup start-string becomes problematic text the same way",
 			"*emphasis without closing asterisk\n",
+			// The diagnostic paragraph that used to follow is dropped by
+			// default -- see TestKeepDiagnostics.
 			richdoc.New().
 				P(richdoc.Txt("*emphasis without closing asterisk")).
-				P(richdoc.Txt("Inline emphasis start-string without end-string.")).
 				Doc(),
 		},
 		{
@@ -1442,6 +1443,64 @@ func TestHeadingUnderlineIsWideEnough(t *testing.T) {
 			}
 			if !reflect.DeepEqual(again.Blocks, doc.Blocks) {
 				t.Errorf("round trip changed the document:\n%s", out)
+			}
+		})
+	}
+}
+
+// TestKeepDiagnostics pins Options.KeepDiagnostics in BOTH directions.
+//
+// A docutils <system_message> is about the SOURCE, not part of the
+// document, and converting it to an ordinary Paragraph put text like
+// "Explicit markup ends without a blank line; unexpected unindent." in
+// the prose as though an author had written it. This package already
+// turns off the three Options docutils/rst offers for author-facing
+// diagnostics, for that exact reason -- but several warnings are behind
+// no flag at all, and docutils/rst v0.117.0 gave four more constructs
+// one of them, which turned a leak nobody had noticed into a visible
+// one.
+//
+// Dropping by default is therefore the renderer's answer; a linting
+// tool that converts a document in order to REPORT on it wants the
+// opposite, so the option exists rather than the behaviour being
+// hard-coded either way.
+func TestKeepDiagnostics(t *testing.T) {
+	cases := []struct {
+		name, source, diagnostic string
+	}{
+		{"an unindented follower", ".. note:: a\nb\n", "Explicit markup ends without a blank line; unexpected unindent."},
+		{"an option list's own wording", "-f FILE  the\nfile\n", "Option list ends without a blank line; unexpected unindent."},
+		{"an unclosed start-string", "*emphasis without closing asterisk\n", "Inline emphasis start-string without end-string."},
+		{"an enumerator that is not ordinal-1", "3. third\n4. fourth\n", `Enumerated list start value not ordinal-1: "3" (ordinal 3)`},
+	}
+	contains := func(d *richdoc.Document, text string) bool {
+		for _, b := range d.Blocks {
+			if p, ok := b.(richdoc.Paragraph); ok && inlineText(p.Inlines) == text {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			def, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if contains(def, tc.diagnostic) {
+				t.Errorf("the default document carries the diagnostic %q:\n%+v", tc.diagnostic, def.Blocks)
+			}
+			kept, err := ParseWithOptions([]byte(tc.source), Options{KeepDiagnostics: true})
+			if err != nil {
+				t.Fatalf("ParseWithOptions: %v", err)
+			}
+			if !contains(kept, tc.diagnostic) {
+				t.Errorf("KeepDiagnostics did not bring back %q:\n%+v", tc.diagnostic, kept.Blocks)
+			}
+			// The control: the DOCUMENT's own content is the same either
+			// way. Dropping a diagnostic must not drop anything else.
+			if len(kept.Blocks) <= len(def.Blocks) {
+				t.Errorf("keeping diagnostics did not add a block: %d vs %d", len(kept.Blocks), len(def.Blocks))
 			}
 		})
 	}

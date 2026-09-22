@@ -12,12 +12,40 @@ import (
 	"github.com/go-richdoc/richdoc"
 )
 
-// Parse converts reStructuredText source into a [richdoc.Document]. It never
+// Options controls a conversion choice this package cannot infer from
+// the source. The zero value is what [Parse] uses.
+type Options struct {
+	// KeepDiagnostics renders docutils' own <system_message> nodes as
+	// ordinary paragraphs, the way every version before v0.117.0 did.
+	//
+	// It defaults FALSE, because a diagnostic is about the SOURCE and
+	// not part of the document: left on, a reader of the converted
+	// document finds "Explicit markup ends without a blank line;
+	// unexpected unindent." sitting in the prose as though an author
+	// had written it. That is the same reason this package already
+	// turns off the three Options docutils/rst offers for author-facing
+	// diagnostics -- but several warnings are behind no flag at all,
+	// and those were arriving here regardless.
+	//
+	// Set it true to get them back: a linting tool that converts a
+	// document in order to REPORT on it wants exactly what a renderer
+	// does not.
+	KeepDiagnostics bool
+}
+
+// Parse converts reStructuredText source into a [richdoc.Document] with
+// the default [Options]. It never
 // returns an error: docutils/rst.Parse has no failure mode of its own (an
 // unrecognized construct degrades to plain text, matching docutils' own
 // tolerant parsing philosophy), so the error return exists only for symmetry
 // with [Write] and the other go-richdoc converters.
 func Parse(src []byte) (*richdoc.Document, error) {
+	return ParseWithOptions(src, Options{})
+}
+
+// ParseWithOptions is [Parse] with explicit control over the choices in
+// [Options].
+func ParseWithOptions(src []byte, opts Options) (*richdoc.Document, error) {
 	// ReportUnknownDirectives OFF. docutils/rst v0.68.0+ defaults it on,
 	// because docutils' own PARSER raises "Unknown directive type" -- but
 	// this package converts a document for a reader, and a directive it
@@ -28,12 +56,12 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// Same reasoning as the dangling-reference default (v0.66.0): a
 	// diagnostic aimed at an author writing reST becomes fabricated
 	// CONTENT once it reaches a converted document.
-	opts := docrst.DefaultOptions()
-	opts.ReportUnknownDirectives = false
+	dopts := docrst.DefaultOptions()
+	dopts.ReportUnknownDirectives = false
 	// Same reasoning for an unknown ROLE: a Sphinx ":doc:" reference is
 	// not an error to a reader, it is text, and convertRole preserves it
 	// as a RawInline carrying the role name.
-	opts.ReportUnknownRoles = false
+	dopts.ReportUnknownRoles = false
 	// And the third report flag, for the same reason once more
 	// (docutils/rst v0.107.0+): docutils' PARSER rejects an option a
 	// directive does not declare, so a sphinx ":caption:" on a code
@@ -42,18 +70,18 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// of 1564 files carry such an option -- 32 documents that would
 	// arrive here having LOST their code or their maths. Off, the option
 	// is simply ignored and the block converts.
-	opts.ReportUnknownDirectiveOptions = false
+	dopts.ReportUnknownDirectiveOptions = false
 	// The opposite direction, and the only one of the five this package
 	// turns ON: Document.Meta IS the promoted docinfo (see leadingMeta and
 	// docinfoToMeta). docutils/rst defaults it off because DocInfo is one
 	// of docutils' TRANSFORMS, so a bare parse leaves a plain field list.
-	opts.PromoteDocInfo = true
+	dopts.PromoteDocInfo = true
 	// Likewise: this package renders footnotes, inlining each definition
 	// at its reference, so it needs the numbers and symbols
 	// transforms.references.Footnotes assigns. Without it an auto
 	// footnote arrives with no label and nothing matches a reference to
 	// its definition.
-	opts.NumberAutoFootnotes = true
+	dopts.NumberAutoFootnotes = true
 	// And the same for hyperlink resolution
 	// (transforms.references.Hyperlinks, off by default in docutils/rst
 	// v0.80.0+): convertReference sends the reader to a reference's
@@ -62,9 +90,10 @@ func Parse(src []byte) (*richdoc.Document, error) {
 	// test that caught this on the v0.80.0 bump was the section-anchor
 	// case -- a single case for a change that silently affects EVERY
 	// resolvable link in the package.
-	opts.ResolveReferences = true
-	doc := docrst.ParseWithOptions(string(src), opts)
+	dopts.ResolveReferences = true
+	doc := docrst.ParseWithOptions(string(src), dopts)
 	c := &converter{
+		opts:         opts,
 		footnoteDefs: map[string]*doctree.Element{},
 		substDefs:    map[string]*doctree.Element{},
 	}
@@ -222,6 +251,7 @@ func topicText(topic *doctree.Element) string {
 // resolved from the two, so an orphan definition (referenced by nothing)
 // is still preserved via [richdoc.RawBlock] rather than silently dropped.
 type converter struct {
+	opts         Options
 	footnoteDefs map[string]*doctree.Element
 	substDefs    map[string]*doctree.Element
 	referenced   map[string]bool
@@ -489,6 +519,14 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// dropped by ACCIDENT and dropped ON PURPOSE read identically in
 		// the output and not at all identically to the next person
 		// touching this switch.
+		return nil
+	case doctree.TagSystemMessage:
+		// See Options.KeepDiagnostics. docutils/rst v0.117.0 gave four
+		// more constructs the "ends without a blank line" warning, which
+		// turned a leak nobody had noticed into a visible one.
+		if c.opts.KeepDiagnostics {
+			return c.convertBlocks(el.Children, level)
+		}
 		return nil
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
 		// Invisible bookkeeping nodes: a hyperlink target's references
