@@ -1505,3 +1505,46 @@ func TestKeepDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+// TestEscapedTargetResolves pins what docutils/rst v0.118.0 means here.
+// A target's name and URI now process escapes and whitespace the way
+// parse_target does, and the name half is the one with a visible
+// consequence: the inline side already read "`a\ b`_" as a reference to
+// "ab" while the target recorded "a\ b", so the two never matched and
+// the link arrived UNRESOLVED -- plain text where the author wrote a
+// link.
+func TestEscapedTargetResolves(t *testing.T) {
+	for _, tc := range []struct{ name, source, want string }{
+		{
+			"an escaped space in the NAME still resolves",
+			"See `a\\ b`_ here.\n\n.. _`a\\ b`: http://e.com\n",
+			"See `ab <http://e.com>`__ here.\n",
+		},
+		{
+			// In a URI an ESCAPED space survives as one space...
+			"an escaped space in the URI is one space",
+			"See `link`_.\n\n.. _link: http://e.com/a\\ b\n",
+			"See `link <http://e.com/a b>`__.\n",
+		},
+		{
+			// ...while an unescaped one is removed entirely.
+			"a tab in the URI is removed",
+			"See `link`_.\n\n.. _link: http://e.com/a\tb\n",
+			"See `link <http://e.com/ab>`__.\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			if string(out) != tc.want {
+				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+		})
+	}
+}
