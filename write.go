@@ -170,10 +170,53 @@ func writeHeading(h richdoc.Heading) string {
 	// test caught the writer emitting reST that no longer read back as
 	// what it was written from). MakeID is the upstream rule itself
 	// rather than a local reimplementation, so the two cannot drift.
-	if h.ID != "" && h.ID != docrst.MakeID(text) {
+	if h.ID != "" && h.ID != docrst.MakeID(text) && !generatedHeadingID(h.ID, text) {
 		s = ".. _" + h.ID + ":\n\n" + s
 	}
 	return s
+}
+
+// generatedHeadingID reports whether id is one the PARSER made up rather
+// than one an author wrote — either shape:
+//
+//	the title's own make_id plus a numeric suffix  ("intro-1" for the
+//	   SECOND section titled "Intro", claimID's disambiguation)
+//	"section-" plus a counter  ("section-1", for a title that yields no
+//	   identifier at all: a CJK or Cyrillic one, since make_id keeps
+//	   only ASCII)
+//
+// Writing either back as an explicit target is worse than useless. The
+// parser assigns the section its id from its own title and position
+// whatever targets precede it — a real ".. _my-anchor:" before a CJK
+// title is dropped the same way — so the target adds no anchor to the
+// model; it only CLAIMS that name, which pushes the section's own id one
+// suffix further. The next round trip writes the pushed id, and the id
+// goes back to the first one: the document OSCILLATES between two forms
+// forever.
+//
+// Three passes is what shows that. One pass looks like plain degradation
+// and two looks like it converged — which is why the test below runs
+// three and compares all of them.
+func generatedHeadingID(id, title string) bool {
+	base := docrst.MakeID(title)
+	if base == "" {
+		base = "section"
+	}
+	rest, ok := strings.CutPrefix(id, base+"-")
+	if !ok {
+		return false
+	}
+	for _, part := range strings.Split(rest, "-") {
+		if part == "" {
+			return false
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // displayWidth returns a heading's own underline length: at least 1 (a
