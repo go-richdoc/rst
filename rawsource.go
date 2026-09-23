@@ -36,6 +36,35 @@ func rawComment(el *doctree.Element) string {
 	return ".. " + indentContinuation(text)
 }
 
+// rawDirectiveSource assembles a directive's reST source from its header
+// line, its OPTION lines and its content — the one place the three are
+// spaced correctly, because getting that spacing wrong produces source
+// that no parser reads back.
+//
+// An option block must start on the line DIRECTLY under the directive.
+// Five of these reconstructions put a blank line there, which ends the
+// directive's own argument/option region: real docutils then reads
+// ":alt: x" as a FIELD LIST in the content. For a figure that is an
+// ERROR ("Figure caption must be a paragraph or empty comment") that
+// discards the caption; for an admonition the field list is simply
+// rendered, so ":class: x" appears as visible text in the document.
+// Both were checked directly against docutils 0.23, not reasoned about.
+//
+// Content, in contrast, is separated from whatever precedes it by one
+// blank line, which is why this cannot be a single join.
+func rawDirectiveSource(header string, options []string, content string) string {
+	switch {
+	case len(options) == 0 && content == "":
+		return header
+	case len(options) == 0:
+		return header + "\n\n" + indentBlock(content)
+	case content == "":
+		return header + "\n" + indentBlock(strings.Join(options, "\n"))
+	default:
+		return header + "\n" + indentBlock(strings.Join(options, "\n")+"\n\n"+content)
+	}
+}
+
 func rawDirective(el *doctree.Element) string {
 	header := ".. " + el.Attr("name") + "::"
 	if args := el.Attr("arguments"); args != "" {
@@ -87,16 +116,7 @@ func rawAdmonition(el *doctree.Element) string {
 			contentParts = append(contentParts, t)
 		}
 	}
-	if len(contentParts) > 0 {
-		if len(bodyLines) > 0 {
-			bodyLines = append(bodyLines, "")
-		}
-		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
-	}
-	if len(bodyLines) == 0 {
-		return header
-	}
-	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+	return rawDirectiveSource(header, bodyLines, strings.Join(contentParts, "\n\n"))
 }
 
 // rawTopic reconstructs ".. topic::" or ".. sidebar::" (docutils/rst
@@ -153,16 +173,7 @@ func rawTopic(el *doctree.Element) string {
 			contentParts = append(contentParts, t)
 		}
 	}
-	if len(contentParts) > 0 {
-		if len(bodyLines) > 0 {
-			bodyLines = append(bodyLines, "")
-		}
-		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
-	}
-	if len(bodyLines) == 0 {
-		return header
-	}
-	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+	return rawDirectiveSource(header, bodyLines, strings.Join(contentParts, "\n\n"))
 }
 
 // rawCompound reconstructs ".. compound::" (docutils/rst v0.42.0+) as
@@ -197,16 +208,7 @@ func rawContainer(el *doctree.Element) string {
 			contentParts = append(contentParts, t)
 		}
 	}
-	if len(contentParts) > 0 {
-		if len(bodyLines) > 0 {
-			bodyLines = append(bodyLines, "")
-		}
-		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
-	}
-	if len(bodyLines) == 0 {
-		return header
-	}
-	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+	return rawDirectiveSource(header, bodyLines, strings.Join(contentParts, "\n\n"))
 }
 
 // rawRubric reconstructs ".. rubric:: TEXT" (docutils/rst v0.45.0+) as
@@ -228,10 +230,7 @@ func rawRubric(el *doctree.Element) string {
 	if name := el.Attr("name"); name != "" {
 		bodyLines = append(bodyLines, ":name: "+name)
 	}
-	if len(bodyLines) == 0 {
-		return header
-	}
-	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+	return rawDirectiveSource(header, bodyLines, "")
 }
 
 // rawDecoration reconstructs docutils/rst v0.48.0's <decoration> — a
@@ -267,6 +266,29 @@ func rawDecoration(el *doctree.Element) string {
 	return strings.Join(parts, "\n\n")
 }
 
+// rawImageTarget reconstructs the ":target:" option value of an image or
+// figure from the <reference> docutils/rst v0.127.0+ wraps the <image>
+// in. A resolved link gives its refuri back directly; a target written as
+// another target's NAME is re-emitted in the form it was written in —
+// backquoted when the name is not a single simplename word, bare
+// otherwise — so the directive still says what the author said.
+func rawImageTarget(ref *doctree.Element) string {
+	if uri := ref.Attr("refuri"); uri != "" {
+		return uri
+	}
+	name := ref.Attr("name")
+	if name == "" {
+		name = ref.Attr("refname")
+	}
+	if name == "" {
+		return ""
+	}
+	if strings.ContainsAny(name, " \t`") {
+		return "`" + name + "`_"
+	}
+	return name + "_"
+}
+
 // rawFigure reconstructs ".. figure::" (docutils/rst v0.29.0+) as
 // literal reST source — richdoc has no figure/caption/legend concept
 // either. Unlike rawTopic/rawAdmonition, a figure's own children are a
@@ -281,6 +303,7 @@ func rawDecoration(el *doctree.Element) string {
 // accepted cost as every other function in this file.
 func rawFigure(el *doctree.Element) string {
 	var img, caption, legend *doctree.Element
+	target := ""
 	for _, c := range el.Children {
 		ce, ok := c.(*doctree.Element)
 		if !ok {
@@ -289,6 +312,19 @@ func rawFigure(el *doctree.Element) string {
 		switch ce.Tag {
 		case doctree.TagImage:
 			img = ce
+		case doctree.TagReference:
+			// docutils/rst v0.127.0+ honours the ":target:" option, and
+			// Figure.run wraps whatever Image.run returned — so with a
+			// target the <image> is a GRANDCHILD and this loop stopped
+			// finding it. The header then came out as a bare
+			// ".. figure::" with no URI at all: the picture, not just
+			// its link, was gone from the converted document.
+			target = rawImageTarget(ce)
+			for _, gc := range ce.Children {
+				if ge, ok := gc.(*doctree.Element); ok && ge.Tag == doctree.TagImage {
+					img = ge
+				}
+			}
 		case doctree.TagCaption:
 			caption = ce
 		case doctree.TagLegend:
@@ -323,6 +359,9 @@ func rawFigure(el *doctree.Element) string {
 			bodyLines = append(bodyLines, ":name: "+v)
 		}
 	}
+	if target != "" {
+		bodyLines = append(bodyLines, ":target: "+target)
+	}
 	if v := el.Attr("width"); v != "" {
 		bodyLines = append(bodyLines, ":figwidth: "+v)
 	}
@@ -349,16 +388,7 @@ func rawFigure(el *doctree.Element) string {
 			contentParts = append(contentParts, t)
 		}
 	}
-	if len(contentParts) > 0 {
-		if len(bodyLines) > 0 {
-			bodyLines = append(bodyLines, "")
-		}
-		bodyLines = append(bodyLines, strings.Join(contentParts, "\n\n"))
-	}
-	if len(bodyLines) == 0 {
-		return header
-	}
-	return header + "\n\n" + indentBlock(strings.Join(bodyLines, "\n"))
+	return rawDirectiveSource(header, bodyLines, strings.Join(contentParts, "\n\n"))
 }
 
 // rawMeta reconstructs ".. meta::" (docutils/rst v0.30.0+) as literal

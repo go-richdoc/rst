@@ -62,13 +62,18 @@ separate reference tool (no tectonic-style external compiler, no Python
 | leading field list (the document's very first block) — plain, or (`docutils/rst` v0.12.0+) promoted to `docinfo` when it has a registered bibliographic name | `Document.Meta`, keyed by field name or, for a typed docinfo child, its own tag (`author`, `date`, `version`, ...); `authors` joins its names with `"; "`; a trailing `dedication`/`abstract` `topic` sibling (docutils' own DocInfo transform emits it right after docinfo, not inside it) is folded in as one more Meta entry, its own title dropped |
 | a BLOCK-level hyperlink `target`, a `substitution_definition` | dropped — invisible bookkeeping whose consuming references are already resolved by the time this package sees the tree |
 | the IMPLICIT `target` sibling a named phrase-reference-with-embedded-link emits (`` `text <uri>`_ ``/`` `text <alias_>`_ ``, `docutils/rst` v0.31.0+) | dropped, the same way a block-level target is — it carries no content of its own (real docutils constructs it with none, just `refuri`/`refname` for some OTHER reference elsewhere to resolve against), and the reference that produced it already carries its own resolved refuri/refname directly; distinguished from a real INLINE internal target (`` _`text` ``, below) by having no children at all |
+| a standalone block-level `image` with a `:target:` (`docutils/rst` v0.127.0+) | `Paragraph` wrapping a single `Link` wrapping the `Image` — the badge every project README opens with; without this the link is silently dropped |
 | a standalone block-level `image` (`docutils/rst` v0.29.0+) | `Paragraph` wrapping a single `Image` inline — richdoc has no bare block-level image concept of its own, so this is the nearest non-lossy placement (the same way CommonMark itself treats a standalone image), not a `RawBlock` fallback: unlike an admonition or a topic, nothing about "this was a directive" needs preserving here |
 | `raw` (`docutils/rst` v0.15.0+, `Options.RawEnabled` — on by default there) | `RawBlock`, Format its real target format (`"html"`, `"latex"`, possibly several space-separated) — genuine target-format content docutils itself already tagged, not this package's own reST resynthesis, so `Write` reconstructs it as a real `.. raw:: FORMAT` directive rather than dropping it the way any OTHER non-`"rst"` `RawBlock` still is (see below) |
 
 **Falls back to `RawBlock`/`RawInline` with Format `"rst"`** (so nothing is
 silently lost, resynthesized from parsed structure rather than a verbatim
 source slice — semantically equivalent, not necessarily byte-identical, see
-the doc comment on `rawsource.go`): directives, comments, a non-leading field
+the doc comment on `rawsource.go`; a reconstruction that carries OPTIONS
+puts them on the line directly under the directive, since a blank line
+there ends the directive's option region and makes docutils read
+`:class: x` as a field list in the content instead — the round-trip test
+is what holds that, not a fixture recording whatever the writer does): directives, comments, a non-leading field
 list, definition lists, line blocks, option lists (man-page-style
 `-f, --file=ARG` items), the nine generic admonitions
 (`attention`/`caution`/`danger`/`error`/`hint`/`important`/`note`/`tip`/
@@ -140,7 +145,9 @@ it at all (not a bug, a real format-capability mismatch — the same category
 as `latex`'s undepended-on `multirow` package for real LaTeX rowspan, or
 `markdown`'s dropped `Anchor` id): an inline `Image` degrades to its alt
 text (reST's only image construct, `.. image::`, is block-level, and can't
-legally appear inside a paragraph); a hard `LineBreak` emits a literal
+legally appear inside a paragraph) — a paragraph that is ONLY an image, or
+only a link around one, is not in that category and is written back as the
+`.. image::` directive it came from, carrying the link as `:target:`; a hard `LineBreak` emits a literal
 newline, which reads back as an ordinary wrapped line, not a break; a POINT
 `Anchor` (no visible text) has nothing to attach reST's inline-target syntax
 to (that syntax requires non-empty backtick-quoted content) and renders to
