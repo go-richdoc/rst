@@ -1812,3 +1812,40 @@ func TestRoleSourceIsReEscaped(t *testing.T) {
 		})
 	}
 }
+
+// TestMailtoIsNotDoubled pins docutils/rst v0.125.0 from this side. A
+// link whose target already carries "mailto:" used to get a second one,
+// so pytest's own contact page -- written
+// "`core@pytest.org <mailto:core@pytest.org>`_" -- converted to a link
+// pointing at "mailto:mailto:core@pytest.org", which no mail client
+// opens.
+//
+// The second case is the control: a bare address still GAINS the
+// scheme, so the fix is not "stop prefixing".
+func TestMailtoIsNotDoubled(t *testing.T) {
+	for _, tc := range []struct{ name, source, wantURL string }{
+		{"already a mailto", "Mail to `core@pytest.org <mailto:core@pytest.org>`_ here\n", "mailto:core@pytest.org"},
+		{"a bare address still gains it", "Mail to `x <a@b.org>`_ here\n", "mailto:a@b.org"},
+		{"a real scheme is untouched", "See `x <http://e.com>`_ here\n", "http://e.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p, ok := doc.Blocks[0].(richdoc.Paragraph)
+			if !ok {
+				t.Fatalf("got %T, want a Paragraph", doc.Blocks[0])
+			}
+			var found string
+			for _, in := range p.Inlines {
+				if l, ok := in.(richdoc.Link); ok {
+					found = l.URL
+				}
+			}
+			if found != tc.wantURL {
+				t.Errorf("link URL = %q, want %q", found, tc.wantURL)
+			}
+		})
+	}
+}
