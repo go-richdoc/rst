@@ -93,6 +93,15 @@ originally produced several of them together), subscript/superscript, any other
 interpreted-text role, an unresolvable footnote/citation reference, and an
 orphan footnote/citation definition (one no reference in the document ever
 resolved to — preserved rather than dropped, in case a converter or a human
+A role rebuilt this way has its content RE-ESCAPED on the way out
+(`rawRole`): the text is content on one side of the reconstruction and
+reST source on the other. A backslash is reST's escape, so content
+`PC\python` written literally re-parses as `PCpython` — and writing
+THAT again loses nothing more, so the damage compounded silently across
+round trips rather than surfacing as an error. A backquote closes the
+role, so content `` a`b `` ended the construct early. `*`, `|` and `_`
+are inert inside the backquotes and are deliberately left alone.
+
 reader still wants it). An abbreviation/acronym instead flattens straight to
 its plain text: the visible content stays readable, only the "this was
 marked" fact is lost.
