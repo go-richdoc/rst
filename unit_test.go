@@ -1668,3 +1668,43 @@ func TestDroppedDiagnosticKeepsQuotedSource(t *testing.T) {
 		}
 	}
 }
+
+// TestSimpleTableMarginTextSurvives is the downstream half of
+// docutils/rst v0.122.0, and it is a CONTENT fix rather than a
+// diagnostic one.
+//
+// Text in the margin between two simple-table columns used to be sliced
+// away by the parser, so the converted document never saw it: the row
+// "a<TAB>b       c" arrived as two cells and the "b" was gone. Upstream
+// now refuses the table and quotes the source, and this package keeps a
+// dropped diagnostic's quoted source (v0.121.0 sync), so the whole row
+// -- "b" included -- reaches the document.
+func TestSimpleTableMarginTextSurvives(t *testing.T) {
+	const src = "========  ========\na       b       c\n========  ========\nd         e\n========  ========\n"
+	doc, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("got %d blocks, want 1: %+v", len(doc.Blocks), doc.Blocks)
+	}
+	cb, ok := doc.Blocks[0].(richdoc.CodeBlock)
+	if !ok {
+		t.Fatalf("got %T, want the quoted source", doc.Blocks[0])
+	}
+	if !strings.Contains(cb.Text, "a       b       c") {
+		t.Errorf("the row that used to lose its middle cell:\n%s", cb.Text)
+	}
+	if strings.Contains(cb.Text, "Malformed") {
+		t.Errorf("the diagnostic leaked into the content:\n%s", cb.Text)
+	}
+
+	// The control: a well-formed simple table still becomes a Table.
+	good, err := Parse([]byte("========  ========\na         b\n========  ========\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, ok := good.Blocks[0].(richdoc.Table); !ok {
+		t.Errorf("a well-formed table became %T", good.Blocks[0])
+	}
+}
