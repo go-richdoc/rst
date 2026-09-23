@@ -1722,17 +1722,16 @@ func TestSimpleTableMarginTextSurvives(t *testing.T) {
 func TestNoPrivateUseRuneReachesTheDocument(t *testing.T) {
 	for _, tc := range []struct{ name, source, want string }{
 		{
-			// FOUND, NOT FIXED: the written form has ONE backslash
-			// where the source had two, because a RawInline is written
-			// verbatim and this one lost a backslash on the way in.
-			// Writing it again turns ":file:`PC\\python_uwp.cpp`" into
-			// ":file:`PCpython_uwp.cpp`" -- a round trip that degrades
-			// each pass. That is a RawInline escaping defect, not the
-			// leak this test is about, so what is asserted here is the
-			// leak.
+			// This case recorded a defect when it was written: the
+			// output had ONE backslash where the source had two, and
+			// writing it again turned ":file:`PC\\python_uwp.cpp`"
+			// into ":file:`PCpython_uwp.cpp`". rawRole now re-escapes
+			// the content it rebuilds a role's source from, so the
+			// source comes back unchanged and the assertion is the
+			// round trip rather than the damage.
 			"an unknown role quoting an escaped backslash",
 			"see :file:`PC\\\\python_uwp.cpp` here\n",
-			"see :file:`PC\\python_uwp.cpp` here\n",
+			"see :file:`PC\\\\python_uwp.cpp` here\n",
 		},
 		{
 			// A scheme with an empty path is a URI upstream now, and
@@ -1758,6 +1757,57 @@ func TestNoPrivateUseRuneReachesTheDocument(t *testing.T) {
 			}
 			if string(out) != tc.want {
 				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+		})
+	}
+}
+
+// TestRoleSourceIsReEscaped covers rawRole, which rebuilds
+// ":role:`text`" from a role's parsed CONTENT. The text is content on
+// one side of that and SOURCE on the other, so the characters reST
+// reads specially have to be put back.
+//
+// Two of them do. A backslash is reST's escape, so content "PC\\python"
+// written literally re-parses as "PCpython" -- and writing THAT again
+// loses nothing more, which is why the damage compounded silently
+// across round trips instead of showing up as an error. A backquote
+// CLOSES the role, so content "a`b" written literally ended the
+// construct early and the rest became ordinary text; that one looked
+// "stable" under a write-twice check because it degraded to a fixed
+// point on the first pass, which is why this compares DOCUMENTS.
+//
+// "*", "|" and "_" are inert inside the backquotes and are the
+// controls: escaping them would be wrong, not merely unnecessary.
+func TestRoleSourceIsReEscaped(t *testing.T) {
+	for _, body := range []string{
+		`plain`,
+		`PC\\python`,
+		"a\\`b",
+		`a*b`,
+		`a|b`,
+		`a_b`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			src := "see :file:`" + body + "` here\n"
+			doc, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(out)
+			if err != nil {
+				t.Fatalf("re-Parse: %v", err)
+			}
+			if !reflect.DeepEqual(again.Blocks, doc.Blocks) {
+				t.Errorf("round trip changed the document:\nwritten %q\nbefore  %+v\nafter   %+v", out, doc.Blocks, again.Blocks)
+			}
+			// And the source itself comes back, since a role written from
+			// its own content should read as the author typed it.
+			if string(out) != src {
+				t.Errorf("source not reproduced:\ngot  %q\nwant %q", out, src)
 			}
 		})
 	}

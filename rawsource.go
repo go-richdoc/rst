@@ -583,8 +583,32 @@ func rawLineBlockLines(el *doctree.Element, depth int) []string {
 	return lines
 }
 
+// rawRole rebuilds ":role:`text`" from a role's parsed CONTENT, so the
+// text has to be re-escaped on the way back out: it is content here and
+// source there.
+//
+// Two characters change meaning inside the backquotes. A backslash is
+// reST's escape, so content "PC\python" written literally re-parses as
+// "PCpython" -- and writing THAT again loses nothing more, which is why
+// the damage compounds silently across round trips rather than showing
+// up as an error. A backquote CLOSES the role, so content "a`b" written
+// literally ends the construct early and the rest becomes ordinary
+// text.
+//
+// Nothing else needs it: "*", "|" and "_" are inert inside a role's
+// backquotes, and were checked rather than assumed.
 func rawRole(role, text string) string {
-	return ":" + role + ":`" + text + "`"
+	var b strings.Builder
+	b.Grow(len(role) + len(text) + 4)
+	b.WriteString(":" + role + ":`")
+	for _, r := range text {
+		if r == '\\' || r == '`' {
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	b.WriteString("`")
+	return b.String()
 }
 
 // rawNoteRef reconstructs a footnote/citation reference marker for one this
