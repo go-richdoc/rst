@@ -1708,3 +1708,57 @@ func TestSimpleTableMarginTextSurvives(t *testing.T) {
 		t.Errorf("a well-formed table became %T", good.Blocks[0])
 	}
 }
+
+// TestNoPrivateUseRuneReachesTheDocument pins docutils/rst v0.123.0's
+// escape-encoding leak from this side. The parser shifts an escaped
+// character into a private-use codepoint while it works; three sites
+// used to pass that straight into a <problematic> node, so U+F005C --
+// a character no document contains -- arrived here as CONTENT and was
+// written back out.
+//
+// The assertion sweeps the whole written document rather than checking
+// one field: a leak like this is a property of the OUTPUT, and the next
+// one will come from a site nobody has looked at.
+func TestNoPrivateUseRuneReachesTheDocument(t *testing.T) {
+	for _, tc := range []struct{ name, source, want string }{
+		{
+			// FOUND, NOT FIXED: the written form has ONE backslash
+			// where the source had two, because a RawInline is written
+			// verbatim and this one lost a backslash on the way in.
+			// Writing it again turns ":file:`PC\\python_uwp.cpp`" into
+			// ":file:`PCpython_uwp.cpp`" -- a round trip that degrades
+			// each pass. That is a RawInline escaping defect, not the
+			// leak this test is about, so what is asserted here is the
+			// leak.
+			"an unknown role quoting an escaped backslash",
+			"see :file:`PC\\\\python_uwp.cpp` here\n",
+			"see :file:`PC\\python_uwp.cpp` here\n",
+		},
+		{
+			// A scheme with an empty path is a URI upstream now, and
+			// round-trips as the text it was written as.
+			"a scheme with no path",
+			"see file:// here\n",
+			"see file:// here\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			for _, r := range string(out) {
+				if r >= 0xF0000 {
+					t.Fatalf("private-use rune U+%04X in the written document:\n%q", r, out)
+				}
+			}
+			if string(out) != tc.want {
+				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+		})
+	}
+}
