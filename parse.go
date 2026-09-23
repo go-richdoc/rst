@@ -99,6 +99,7 @@ func ParseWithOptions(src []byte, opts Options) (*richdoc.Document, error) {
 	}
 	c.collect(doc)
 	c.resolveConsumed()
+	c.collectSectionAnchors(doc)
 
 	meta, children := leadingMeta(doc.Children)
 
@@ -256,6 +257,12 @@ type converter struct {
 	substDefs    map[string]*doctree.Element
 	referenced   map[string]bool
 	consumed     map[string]bool
+	// headingAnchor maps a section's OWN id to the explicit ".. _name:"
+	// anchor written in front of it, and anchorAlias maps every id that
+	// now names the same heading -- the section's slug and any further
+	// targets -- to that one. See collectSectionAnchors.
+	headingAnchor map[string]string
+	anchorAlias   map[string]string
 }
 
 // resolveConsumed decides, before any conversion, which definitions will
@@ -325,6 +332,76 @@ func (c *converter) collect(n doctree.Node) {
 	for _, ch := range el.Children {
 		c.collect(ch)
 	}
+}
+
+// collectSectionAnchors finds the explicit anchors written in front of a
+// section -- "..  _label:" then a title, which is how Sphinx documents
+// label every section they cross-reference.
+//
+// docutils handles these in a TRANSFORM (transforms.references.
+// PropagateTargets, read directly): an internal target, meaning a
+// block-level <target> with no refuri/refid/refname of its own, hands its
+// ids and names to the next node, so the section ends up carrying BOTH
+// "introduction" and "my-anchor". richdoc's Heading has ONE ID, and its
+// own documentation says what that ID is for: "a Markdown heading anchor,
+// a LaTeX \section immediately followed by \label" -- the author's label,
+// not a slug derived from the title. So the label wins, and every id that
+// used to name the section is remapped onto it.
+//
+// Without this the target was simply dropped (see convertBlockElement's
+// TagTarget case, which is right for every OTHER target: one carrying a
+// refuri is bookkeeping its references already resolved). The label went
+// missing from the document, and a "my-anchor_" reference elsewhere --
+// already resolved to the Link "#my-anchor" -- pointed at an id nothing
+// in the converted tree carried. A DANGLING link, in every document that
+// follows the Sphinx convention.
+func (c *converter) collectSectionAnchors(el *doctree.Element) {
+	var pending []*doctree.Element
+	for _, ch := range el.Children {
+		ce, ok := ch.(*doctree.Element)
+		if !ok {
+			pending = nil
+			continue
+		}
+		switch {
+		case isInternalTarget(ce):
+			pending = append(pending, ce)
+			continue
+		case ce.Tag == doctree.TagSystemMessage:
+			// PropagateTargets steps over these explicitly, since a
+			// later transform may remove them.
+			continue
+		case ce.Tag == doctree.TagSection && len(pending) > 0 && pending[0].Attr("id") != "":
+			chosen := pending[0].Attr("id")
+			if c.headingAnchor == nil {
+				c.headingAnchor = map[string]string{}
+				c.anchorAlias = map[string]string{}
+			}
+			if own := ce.Attr("id"); own != "" {
+				c.headingAnchor[own] = chosen
+				c.anchorAlias[own] = chosen
+			}
+			for _, t := range pending[1:] {
+				if id := t.Attr("id"); id != "" {
+					c.anchorAlias[id] = chosen
+				}
+			}
+		}
+		pending = nil
+		c.collectSectionAnchors(ce)
+	}
+}
+
+// isInternalTarget reports whether el is the kind of target
+// PropagateTargets moves: a block-level ".. _name:" with no reference of
+// its own. One carrying a refuri is an external link's definition and
+// names nothing in this document; one carrying a refname points at
+// another target and is resolved before it gets here.
+func isInternalTarget(el *doctree.Element) bool {
+	return el.Tag == doctree.TagTarget &&
+		el.Attr("name") != "" &&
+		el.Attr("refuri") == "" &&
+		el.Attr("refname") == ""
 }
 
 // convertBlocks converts a sequence of doctree nodes to a flat block list.
@@ -593,7 +670,13 @@ func (c *converter) convertSection(el *doctree.Element, level int) []richdoc.Blo
 			// (see rst's own systemMessagesSection) never gets an id at
 			// all, so this is empty for it, same as any other heading
 			// nobody referenced.
-			out = append(out, richdoc.Heading{Level: clampLevel(level), ID: el.Attr("id"), Inlines: c.convertInlines(title.Children)})
+			id := el.Attr("id")
+			if anchor, ok := c.headingAnchor[id]; ok {
+				// An explicit ".. _label:" in front of this section --
+				// see collectSectionAnchors.
+				id = anchor
+			}
+			out = append(out, richdoc.Heading{Level: clampLevel(level), ID: id, Inlines: c.convertInlines(title.Children)})
 		}
 	}
 	for _, ch := range el.Children {
@@ -918,6 +1001,15 @@ func (c *converter) convertReference(el *doctree.Element) []richdoc.Inline {
 	uri := el.Attr("refuri")
 	if uri == "" {
 		return c.convertInlines(el.Children)
+	}
+	// A same-document link may point at an id the heading no longer
+	// carries, because an explicit anchor in front of a section takes
+	// that heading's one ID slot -- so "#introduction" and "#my-anchor"
+	// both have to arrive at whichever one was kept.
+	if name, ok := strings.CutPrefix(uri, "#"); ok {
+		if anchor, found := c.anchorAlias[name]; found {
+			uri = "#" + anchor
+		}
 	}
 	return []richdoc.Inline{richdoc.Link{URL: uri, Inlines: c.convertInlines(el.Children)}}
 }

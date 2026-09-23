@@ -39,7 +39,7 @@ separate reference tool (no tectonic-style external compiler, no Python
 
 | doctree tag | richdoc node |
 | --- | --- |
-| `section` | flattened: title becomes a `Heading` at the nesting depth (clamped to 1–6), the rest of the section's content follows one level deeper — richdoc has no section wrapper. `Heading.ID` carries the section's own implicit-target slug (docutils/rst v0.17.0+), so a resolved `` `Some Title`_ `` reference — already a `Link` to `"#the-slug"` — points at a real anchor |
+| `section` | flattened: title becomes a `Heading` at the nesting depth (clamped to 1–6), the rest of the section's content follows one level deeper — richdoc has no section wrapper. `Heading.ID` carries the section's own implicit-target slug (docutils/rst v0.17.0+), so a resolved `` `Some Title`_ `` reference — already a `Link` to `"#the-slug"` — points at a real anchor. An explicit `.. _label:` written in FRONT of the title takes that slot instead — the Sphinx convention for labelling a section, and what `Heading.ID` is documented for ("a LaTeX `\section` immediately followed by `\label`"). docutils does this in a transform (`references.PropagateTargets`, which hands an internal target's ids to the next node, so the section carries both); richdoc's `Heading` has one ID, so the label wins and every id that used to name that section — its slug, and any further labels — is remapped onto it, or a `label_` reference would point at an id nothing carries. A label in front of anything OTHER than a section is still dropped: no other richdoc block has an id to put it on |
 | `paragraph` | `Paragraph` |
 | `bullet_list` / `enumerated_list` | `List` (`Tight` true when every item is exactly one `Paragraph`) |
 | `list_item` | `ListItem` |
