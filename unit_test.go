@@ -1622,3 +1622,49 @@ func TestMalformedTargetRoundTrips(t *testing.T) {
 		})
 	}
 }
+
+// TestDroppedDiagnosticKeepsQuotedSource pins the boundary of the
+// KeepDiagnostics default: it removes the message, NOT the author's
+// text.
+//
+// docutils quotes the offending source inside the system_message as a
+// <literal_block> -- docutils/rst v0.121.0 made a malformed table carry
+// its whole source that way -- and dropping the message wholesale took
+// the table out of the converted document entirely. That is worse than
+// the diagnostic paragraph the default exists to remove: one is
+// commentary, the other is what somebody typed.
+func TestDroppedDiagnosticKeepsQuotedSource(t *testing.T) {
+	const malformed = "+--------+--------+\n| a     b    | c      |\n+========+========+\n| d      | e      |\n+--------+--------+\n"
+
+	doc, err := Parse([]byte(malformed))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(doc.Blocks) != 1 {
+		t.Fatalf("got %d blocks, want 1 (the quoted source, and no diagnostic): %+v", len(doc.Blocks), doc.Blocks)
+	}
+	cb, ok := doc.Blocks[0].(richdoc.CodeBlock)
+	if !ok {
+		t.Fatalf("got %T, want the quoted source as a CodeBlock", doc.Blocks[0])
+	}
+	for _, want := range []string{"+--------+--------+", "| a     b    | c      |", "| d      | e      |"} {
+		if !strings.Contains(cb.Text, want) {
+			t.Errorf("the author's line %q did not survive:\n%s", want, cb.Text)
+		}
+	}
+	if strings.Contains(cb.Text, "Malformed table") {
+		t.Errorf("the diagnostic leaked into the content:\n%s", cb.Text)
+	}
+
+	// The control: a message with NO quoted source still disappears
+	// completely, which is what the default is for.
+	doc2, err := Parse([]byte("*unclosed\n"))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	for _, b := range doc2.Blocks {
+		if p, ok := b.(richdoc.Paragraph); ok && strings.Contains(inlineText(p.Inlines), "start-string without end-string") {
+			t.Errorf("a diagnostic with no quoted source survived: %+v", doc2.Blocks)
+		}
+	}
+}

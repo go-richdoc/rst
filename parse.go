@@ -527,7 +527,23 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		if c.opts.KeepDiagnostics {
 			return c.convertBlocks(el.Children, level)
 		}
-		return nil
+		// Dropping the message must not drop the AUTHOR'S text with it.
+		// docutils quotes the offending source inside the message as a
+		// <literal_block> -- a malformed table carries its whole source
+		// that way (docutils/rst v0.121.0+) -- and that is content, not
+		// commentary. Without this the table vanished from the
+		// converted document entirely, which is worse than the
+		// diagnostic paragraph this default exists to remove.
+		var kept []doctree.Node
+		for _, ch := range el.Children {
+			if e, ok := ch.(*doctree.Element); ok && e.Tag == doctree.TagLiteralBlock {
+				kept = append(kept, e)
+			}
+		}
+		if len(kept) == 0 {
+			return nil
+		}
+		return c.convertBlocks(kept, level)
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
 		// Invisible bookkeeping nodes: a hyperlink target's references
 		// already carry a resolved refuri directly (see the rst package's
