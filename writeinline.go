@@ -155,6 +155,16 @@ func plainText(nodes []richdoc.Inline) string {
 			b.WriteString(plainText(v.Inlines))
 		case richdoc.Code:
 			b.WriteString(v.Value)
+		case richdoc.Image:
+			// The same degradation writeInline documents for an inline
+			// image — the alt text. Without this case an image inside a
+			// link contributed NOTHING, so a linked badge came out as
+			// "` <uri>`__", an empty-label link that does not even read
+			// back as a link. A paragraph that is only a linked image
+			// becomes an ".. image::" directive before it reaches here
+			// (see writeImageBlock); this is what is left for one that
+			// shares its paragraph with something else.
+			b.WriteString(v.Alt)
 		case richdoc.Link:
 			b.WriteString(plainText(v.Inlines))
 		case richdoc.Math:

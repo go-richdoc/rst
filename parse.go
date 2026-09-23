@@ -487,6 +487,17 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// not a RawBlock fallback: unlike an admonition or a topic,
 		// nothing about "this was a directive" needs preserving here.
 		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines([]doctree.Node{el})}}
+	case doctree.TagReference:
+		// docutils/rst v0.127.0+ -- an ".. image::" with a ":target:"
+		// arrives as a <reference> wrapping the <image>, which is how
+		// every project README writes a badge. Without this case the
+		// default branch below unwrapped it to its children and the LINK
+		// was silently dropped, leaving the picture pointing nowhere.
+		// Wrapped in a Paragraph for exactly the reason the bare image
+		// above is: richdoc has no block-level image or link, and the
+		// single-inline paragraph is the faithful placement, not a
+		// fallback.
+		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines([]doctree.Node{el})}}
 	case doctree.TagFigure:
 		// docutils/rst v0.29.0+ -- richdoc has no figure/caption/
 		// legend concept at all, so -- unlike a bare image above --

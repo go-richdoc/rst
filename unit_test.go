@@ -356,12 +356,12 @@ func TestParse(t *testing.T) {
 		{
 			":class:/:name: options are reconstructed on an admonition's own RawBlock",
 			".. Note:: :name: mynote\n   :class: testnote\n\n   Admonitions support the generic \"name\" and \"class\" options.\n",
-			richdoc.New().RawBlock("rst", ".. note::\n\n   :class: testnote\n   :name: mynote\n\n   Admonitions support the generic \"name\" and \"class\" options.").Doc(),
+			richdoc.New().RawBlock("rst", ".. note::\n   :class: testnote\n   :name: mynote\n\n   Admonitions support the generic \"name\" and \"class\" options.").Doc(),
 		},
 		{
 			"the generic admonition directive keeps its title on the header line",
 			".. admonition:: Admonition\n\n   This is a generic admonition.\n",
-			richdoc.New().RawBlock("rst", ".. admonition:: Admonition\n\n   :class: admonition-admonition\n\n   This is a generic admonition.").Doc(),
+			richdoc.New().RawBlock("rst", ".. admonition:: Admonition\n   :class: admonition-admonition\n\n   This is a generic admonition.").Doc(),
 		},
 		{
 			// docutils/rst v0.28.0+ — like the admonitions above,
@@ -378,7 +378,7 @@ func TestParse(t *testing.T) {
 			// title — is reconstructed ahead of :class:/:name:.
 			"sidebar with a subtitle becomes a RawBlock",
 			".. sidebar:: Sidebar Title\n   :subtitle: Optional Sidebar Subtitle\n\n   Subsequent indented lines comprise\n   the body of the sidebar, and are\n   interpreted as body elements.\n",
-			richdoc.New().RawBlock("rst", ".. sidebar:: Sidebar Title\n\n   :subtitle: Optional Sidebar Subtitle\n\n   Subsequent indented lines comprise\n   the body of the sidebar, and are\n   interpreted as body elements.").Doc(),
+			richdoc.New().RawBlock("rst", ".. sidebar:: Sidebar Title\n   :subtitle: Optional Sidebar Subtitle\n\n   Subsequent indented lines comprise\n   the body of the sidebar, and are\n   interpreted as body elements.").Doc(),
 		},
 		{
 			"sidebar with no title omits the header argument",
@@ -419,7 +419,7 @@ func TestParse(t *testing.T) {
 		{
 			"a bare container with a :name: option becomes a RawBlock, not silently unwrapped to its bare content",
 			".. container::\n   :name: my container\n\n   Some text.\n",
-			richdoc.New().RawBlock("rst", ".. container::\n\n   :name: my container\n\n   Some text.").Doc(),
+			richdoc.New().RawBlock("rst", ".. container::\n   :name: my container\n\n   Some text.").Doc(),
 		},
 		{
 			// docutils/rst v0.48.0+ — richdoc has no document-header/
@@ -448,7 +448,7 @@ func TestParse(t *testing.T) {
 			// entirely, not just unwrapped.
 			"rubric becomes a RawBlock, not silently dropped entirely",
 			".. rubric:: A Rubric\n   :class: foo\n",
-			richdoc.New().RawBlock("rst", ".. rubric:: A Rubric\n\n   :class: foo").Doc(),
+			richdoc.New().RawBlock("rst", ".. rubric:: A Rubric\n   :class: foo").Doc(),
 		},
 		{
 			// docutils/rst v0.29.0+ — a standalone block-level image
@@ -472,7 +472,7 @@ func TestParse(t *testing.T) {
 		{
 			"every image-level AND figure-level option, plus a legend, is reconstructed on the figure's own RawBlock",
 			".. figure:: pic.png\n   :alt: a cat\n   :height: 100\n   :width: 200\n   :scale: 50\n   :loading: lazy\n   :class: img-class\n   :name: img-name\n   :figwidth: 300\n   :figclass: fig-class\n   :figname: fig-name\n   :align: center\n\n   A caption.\n\n   A legend line.\n",
-			richdoc.New().RawBlock("rst", ".. figure:: pic.png\n\n   :alt: a cat\n   :height: 100\n   :width: 200\n   :scale: 50\n   :loading: lazy\n   :class: img-class\n   :name: img-name\n   :figwidth: 300px\n   :figclass: fig-class\n   :figname: fig-name\n   :align: center\n\n   A caption.\n\n   A legend line.").Doc(),
+			richdoc.New().RawBlock("rst", ".. figure:: pic.png\n   :alt: a cat\n   :height: 100\n   :width: 200\n   :scale: 50\n   :loading: lazy\n   :class: img-class\n   :name: img-name\n   :figwidth: 300px\n   :figclass: fig-class\n   :figname: fig-name\n   :align: center\n\n   A caption.\n\n   A legend line.").Doc(),
 		},
 		{
 			// docutils/rst v0.30.0+ — richdoc has no HTML/head-metadata

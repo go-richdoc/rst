@@ -97,6 +97,18 @@ func (w *writer) writeBlock(b richdoc.Block, level int) string {
 	case richdoc.Heading:
 		return writeHeading(n)
 	case richdoc.Paragraph:
+		// A paragraph holding nothing but an image — or a link around
+		// nothing but an image — is what an ".. image::" directive
+		// becomes when it is read (see convertBlockElement), and reST
+		// has no INLINE image to write it back as: writeInline degrades
+		// one to its alt text, so a picture disappeared from every
+		// document this writer produced, and a LINKED one came out as
+		// the empty-label "` <uri>`__", which does not even read back as
+		// a link. In block position the directive is available and
+		// nothing has to be lost.
+		if src, ok := writeImageBlock(n.Inlines); ok {
+			return src
+		}
 		return w.writeInlines(n.Inlines)
 	case richdoc.List:
 		return w.writeList(n)
@@ -461,4 +473,39 @@ func gridRow(cells []spanCell, widths []int) string {
 		col += c.span
 	}
 	return b.String()
+}
+
+// writeImageBlock renders a paragraph that is exactly one image, or
+// exactly one link around exactly one image, as the ".. image::"
+// directive it was read from — ":target:" carrying the link back.
+// Anything else in the paragraph, even an empty text node beside the
+// image, makes it a real paragraph again and this declines: the
+// directive is a BLOCK, so it cannot be spliced into running text.
+func writeImageBlock(inlines []richdoc.Inline) (string, bool) {
+	if len(inlines) != 1 {
+		return "", false
+	}
+	target := ""
+	img, ok := inlines[0].(richdoc.Image)
+	if !ok {
+		link, isLink := inlines[0].(richdoc.Link)
+		if !isLink || len(link.Inlines) != 1 {
+			return "", false
+		}
+		if img, ok = link.Inlines[0].(richdoc.Image); !ok {
+			return "", false
+		}
+		target = link.URL
+	}
+	if img.URL == "" {
+		return "", false
+	}
+	var options []string
+	if img.Alt != "" {
+		options = append(options, ":alt: "+img.Alt)
+	}
+	if target != "" {
+		options = append(options, ":target: "+target)
+	}
+	return rawDirectiveSource(".. image:: "+img.URL, options, ""), true
 }
