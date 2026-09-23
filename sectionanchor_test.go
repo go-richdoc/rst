@@ -161,3 +161,27 @@ func TestSectionAnchorRoundTrips(t *testing.T) {
 		})
 	}
 }
+
+// TestKeptDiagnosticQuotesTheNameAsWritten pins the one place a
+// docutils message TEXT reaches a converted document: Options{
+// KeepDiagnostics: true}, for a tool that converts a document in order
+// to report on it. docutils/rst v0.129.0 stopped escaping the name it
+// quotes (the Go %q verb is strconv.Quote, not Python's plain
+// interpolation), so a name carrying quotes of its own now reads the way
+// the author wrote it.
+func TestKeptDiagnosticQuotesTheNameAsWritten(t *testing.T) {
+	src := "A `Say \"hi\" <http://e.org/>`_ and `Say \"hi\" <http://e.org/>`_.\n"
+	doc, err := ParseWithOptions([]byte(src), Options{KeepDiagnostics: true})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := `Duplicate name "say "hi"" for external target "http://e.org/".`
+	first, ok := doc.Blocks[0].(richdoc.Paragraph)
+	if !ok {
+		t.Fatalf("first block is %T, want the diagnostic Paragraph", doc.Blocks[0])
+	}
+	got, ok := first.Inlines[0].(richdoc.Text)
+	if !ok || got.Value != want {
+		t.Errorf("diagnostic text = %#v, want %q", first.Inlines[0], want)
+	}
+}
