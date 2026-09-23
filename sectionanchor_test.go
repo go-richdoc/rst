@@ -1,0 +1,163 @@
+// Copyright (c) the go-richdoc authors.
+// SPDX-License-Identifier: BSD-3-Clause
+
+package rst
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/go-richdoc/richdoc"
+)
+
+// TestSectionAnchor covers the Sphinx convention — ".. _label:" in front
+// of a section title, which is how every cross-referenced section in a
+// Sphinx document is labelled.
+//
+// docutils handles it in a transform (references.PropagateTargets): an
+// internal target hands its ids and names to the next node, so the
+// section carries both "introduction" and "my-anchor". This package
+// dropped the target instead, which lost the label AND left every
+// "my-anchor_" reference — already resolved to the link "#my-anchor" —
+// pointing at an id nothing in the converted document carried.
+func TestSectionAnchor(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		want   []richdoc.Block
+	}{
+		{
+			"the label becomes the heading's id and both references reach it",
+			".. _my-anchor:\n\nIntroduction\n============\n\nSee my-anchor_ and `Introduction`_.\n",
+			[]richdoc.Block{
+				richdoc.Heading{Level: 1, ID: "my-anchor", Inlines: []richdoc.Inline{richdoc.Text{Value: "Introduction"}}},
+				richdoc.Paragraph{Inlines: []richdoc.Inline{
+					richdoc.Text{Value: "See "},
+					richdoc.Link{URL: "#my-anchor", Inlines: []richdoc.Inline{richdoc.Text{Value: "my-anchor"}}},
+					richdoc.Text{Value: " and "},
+					richdoc.Link{URL: "#my-anchor", Inlines: []richdoc.Inline{richdoc.Text{Value: "Introduction"}}},
+					richdoc.Text{Value: "."},
+				}},
+			},
+		},
+		{
+			// richdoc.Heading has ONE ID, so the first label wins and
+			// the others become aliases for it. Nothing dangles, but
+			// the extra names are not written back.
+			"several labels collapse onto the first, and every reference follows",
+			".. _a:\n.. _b:\n\nIntroduction\n============\n\nSee a_ and b_.\n",
+			[]richdoc.Block{
+				richdoc.Heading{Level: 1, ID: "a", Inlines: []richdoc.Inline{richdoc.Text{Value: "Introduction"}}},
+				richdoc.Paragraph{Inlines: []richdoc.Inline{
+					richdoc.Text{Value: "See "},
+					richdoc.Link{URL: "#a", Inlines: []richdoc.Inline{richdoc.Text{Value: "a"}}},
+					richdoc.Text{Value: " and "},
+					richdoc.Link{URL: "#a", Inlines: []richdoc.Inline{richdoc.Text{Value: "b"}}},
+					richdoc.Text{Value: "."},
+				}},
+			},
+		},
+		{
+			// CONTROL: a target with a refuri is an external link's
+			// definition, not an anchor for what follows it —
+			// PropagateTargets skips exactly those. The heading keeps
+			// its own slug.
+			"a target carrying a URI is not an anchor for the section after it",
+			".. _elsewhere: https://example.org/\n\nIntroduction\n============\n\nSee elsewhere_.\n",
+			[]richdoc.Block{
+				richdoc.Heading{Level: 1, ID: "introduction", Inlines: []richdoc.Inline{richdoc.Text{Value: "Introduction"}}},
+				richdoc.Paragraph{Inlines: []richdoc.Inline{
+					richdoc.Text{Value: "See "},
+					richdoc.Link{URL: "https://example.org/", Inlines: []richdoc.Inline{richdoc.Text{Value: "elsewhere"}}},
+					richdoc.Text{Value: "."},
+				}},
+			},
+		},
+		{
+			// CONTROL: a label that is not immediately before a section
+			// has no heading to attach to. richdoc has no id on any
+			// other block, so this is still dropped — stated here so
+			// that the day a Paragraph grows one, the case is already
+			// written down.
+			"a label in front of a paragraph is still dropped",
+			".. _my-anchor:\n\nSome paragraph.\n",
+			[]richdoc.Block{
+				richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Text{Value: "Some paragraph."}}},
+			},
+		},
+		{
+			// CONTROL: a section with no label keeps its title slug.
+			"a section with no label is unchanged",
+			"Introduction\n============\n\nSee `Introduction`_.\n",
+			[]richdoc.Block{
+				richdoc.Heading{Level: 1, ID: "introduction", Inlines: []richdoc.Inline{richdoc.Text{Value: "Introduction"}}},
+				richdoc.Paragraph{Inlines: []richdoc.Inline{
+					richdoc.Text{Value: "See "},
+					richdoc.Link{URL: "#introduction", Inlines: []richdoc.Inline{richdoc.Text{Value: "Introduction"}}},
+					richdoc.Text{Value: "."},
+				}},
+			},
+		},
+		{
+			// The label reaches a NESTED section too, which is where
+			// most of them live.
+			"a label in front of a subsection works the same",
+			"Top\n===\n\n.. _sub-label:\n\nSub\n---\n\nSee sub-label_.\n",
+			[]richdoc.Block{
+				richdoc.Heading{Level: 1, ID: "top", Inlines: []richdoc.Inline{richdoc.Text{Value: "Top"}}},
+				richdoc.Heading{Level: 2, ID: "sub-label", Inlines: []richdoc.Inline{richdoc.Text{Value: "Sub"}}},
+				richdoc.Paragraph{Inlines: []richdoc.Inline{
+					richdoc.Text{Value: "See "},
+					richdoc.Link{URL: "#sub-label", Inlines: []richdoc.Inline{richdoc.Text{Value: "sub-label"}}},
+					richdoc.Text{Value: "."},
+				}},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if !reflect.DeepEqual(doc.Blocks, tc.want) {
+				t.Errorf("Parse(%q) blocks =\n%#v\nwant:\n%#v", tc.source, doc.Blocks, tc.want)
+			}
+		})
+	}
+}
+
+// TestSectionAnchorRoundTrips writes the label back out, which is what
+// makes the anchor survive a conversion rather than merely survive the
+// parse. Three passes, for the reason TestHeadingRoundTripIsStable gives.
+func TestSectionAnchorRoundTrips(t *testing.T) {
+	sources := []string{
+		".. _my-anchor:\n\nIntroduction\n============\n\nBody.\n",
+		"Top\n===\n\n.. _sub-label:\n\nSub\n---\n\nBody.\n",
+	}
+	for _, src := range sources {
+		t.Run(src, func(t *testing.T) {
+			doc, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			for pass := 1; pass <= 3; pass++ {
+				written, err := Write(doc)
+				if err != nil {
+					t.Fatalf("pass %d: Write: %v", pass, err)
+				}
+				if string(written) != src {
+					t.Fatalf("pass %d wrote %q, want %q", pass, string(written), src)
+				}
+				next, err := Parse(written)
+				if err != nil {
+					t.Fatalf("pass %d: reparse: %v", pass, err)
+				}
+				if !reflect.DeepEqual(doc, next) {
+					t.Fatalf("pass %d changed the document\n  before: %#v\n  after:  %#v", pass, doc.Blocks, next.Blocks)
+				}
+				doc = next
+			}
+		})
+	}
+}
