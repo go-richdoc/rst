@@ -185,3 +185,58 @@ func TestKeptDiagnosticQuotesTheNameAsWritten(t *testing.T) {
 		t.Errorf("diagnostic text = %#v, want %q", first.Inlines[0], want)
 	}
 }
+
+// TestBacktrackedURIReachesTheDocument pins the two links docutils/rst
+// v0.130.0 recovers: a standalone URI or email address followed by a
+// character that cannot end one is no longer abandoned, so the prefix
+// becomes a real Link here instead of staying inside a text run. Both
+// round-trip.
+func TestBacktrackedURIReachesTheDocument(t *testing.T) {
+	cases := []struct {
+		source string
+		want   []richdoc.Inline
+	}{
+		{
+			"See https://e.org/issues/{{ x }} end\n",
+			[]richdoc.Inline{
+				richdoc.Text{Value: "See "},
+				richdoc.Link{URL: "https://e.org/issues", Inlines: []richdoc.Inline{richdoc.Text{Value: "https://e.org/issues"}}},
+				richdoc.Text{Value: "/{{ x }} end"},
+			},
+		},
+		{
+			"See user@e.org/{ end\n",
+			[]richdoc.Inline{
+				richdoc.Text{Value: "See "},
+				richdoc.Link{URL: "mailto:user@e.org", Inlines: []richdoc.Inline{richdoc.Text{Value: "user@e.org"}}},
+				richdoc.Text{Value: "/{ end"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.source, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p, ok := doc.Blocks[0].(richdoc.Paragraph)
+			if !ok {
+				t.Fatalf("first block is %T, want a Paragraph", doc.Blocks[0])
+			}
+			if !reflect.DeepEqual(p.Inlines, tc.want) {
+				t.Errorf("inlines =\n%#v\nwant:\n%#v", p.Inlines, tc.want)
+			}
+			written, err := Write(doc)
+			if err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			again, err := Parse(written)
+			if err != nil {
+				t.Fatalf("reparse: %v", err)
+			}
+			if !reflect.DeepEqual(doc, again) {
+				t.Errorf("round trip changed the document: %q -> %#v", string(written), again.Blocks)
+			}
+		})
+	}
+}
