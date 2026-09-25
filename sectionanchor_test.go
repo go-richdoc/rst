@@ -297,3 +297,53 @@ func TestSphinxOnlyOptionKeepsItsBlock(t *testing.T) {
 		})
 	}
 }
+
+// TestEmbeddedAliasLinkText pins the link LABEL for a phrase reference
+// whose text is omitted — "`<target>`_", where the target supplies the
+// text. docutils/rst v0.134.0 made that label the alias AS COMPUTED, so a
+// name alias arrives normalized and an email alias arrives as the whole
+// "mailto:" URI it links to, which is what docutils' own HTML writer
+// renders.
+//
+// It reaches converted documents: over the 1564-file corpus this changed
+// six lines, all of them in PEP 447, whose message-ID links are written
+// this way.
+func TestEmbeddedAliasLinkText(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		want   richdoc.Inline
+	}{
+		{
+			"a name alias is normalized",
+			"`<Feature Negotiation_>`__\n\n.. _feature negotiation: https://e.org/\n",
+			richdoc.Link{URL: "https://e.org/", Inlines: []richdoc.Inline{richdoc.Text{Value: "feature negotiation"}}},
+		},
+		{
+			"an email alias keeps the mailto: it links to",
+			"`<user@e.org>`__\n",
+			richdoc.Link{URL: "mailto:user@e.org", Inlines: []richdoc.Inline{richdoc.Text{Value: "mailto:user@e.org"}}},
+		},
+		{
+			// CONTROL: a reference WITH text of its own is untouched.
+			"an alias with text keeps the text",
+			"`shown <Feature Negotiation_>`__\n\n.. _feature negotiation: https://e.org/\n",
+			richdoc.Link{URL: "https://e.org/", Inlines: []richdoc.Inline{richdoc.Text{Value: "shown"}}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p, ok := doc.Blocks[0].(richdoc.Paragraph)
+			if !ok || len(p.Inlines) != 1 {
+				t.Fatalf("want one inline in a Paragraph, got %#v", doc.Blocks[0])
+			}
+			if !reflect.DeepEqual(p.Inlines[0], tc.want) {
+				t.Errorf("inline =\n%#v\nwant:\n%#v", p.Inlines[0], tc.want)
+			}
+		})
+	}
+}
