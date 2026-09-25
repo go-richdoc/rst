@@ -407,6 +407,48 @@ func isInternalTarget(el *doctree.Element) bool {
 		el.Attr("refname") == ""
 }
 
+// rawSource reconstructs el as reST for a RawBlock, with the diagnostics
+// removed first unless the caller asked to keep them.
+//
+// Every raw* reconstruction walks the element's own children, so a
+// <system_message> nested inside one reaches the output as ordinary text
+// -- the TagSystemMessage case that drops diagnostics is never consulted
+// for a subtree that has already become a RawBlock. That was harmless
+// while every duplicate-name notice sat OUTSIDE its container and became
+// a top-level block; docutils/rst v0.136.2 put it inside the ".. note::"
+// it belongs to, where it would have leaked "Duplicate implicit target
+// name: ..." into the default output as if an author had written it.
+// Caught by a CONTROL asserting the default still drops it -- the change
+// itself looked right in the mode that keeps them.
+func (c *converter) rawSource(el *doctree.Element, reconstruct func(*doctree.Element) string) string {
+	if c.opts.KeepDiagnostics {
+		return reconstruct(el)
+	}
+	return reconstruct(withoutDiagnostics(el))
+}
+
+// withoutDiagnostics returns a copy of el with every <system_message>
+// descendant removed. A message is a BODY element, so it can sit in any
+// container inside the subtree, not only directly under it.
+func withoutDiagnostics(el *doctree.Element) *doctree.Element {
+	out := doctree.NewElement(el.Tag)
+	for k, v := range el.Attrs {
+		out.SetAttr(k, v)
+	}
+	for _, ch := range el.Children {
+		ce, ok := ch.(*doctree.Element)
+		if !ok {
+			out.Append(ch)
+			continue
+		}
+		if ce.Tag == doctree.TagSystemMessage {
+			continue
+		}
+		out.Append(withoutDiagnostics(ce))
+	}
+	return out
+}
+
 // convertBlocks converts a sequence of doctree nodes to a flat block list.
 func (c *converter) convertBlocks(nodes []doctree.Node, level int) []richdoc.Block {
 	var out []richdoc.Block
@@ -481,15 +523,15 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// construct after implementing it on the docutils/rst side.
 		return []richdoc.Block{richdoc.RawBlock{Format: el.Attr("format"), Text: doctree.AsText(el)}}
 	case doctree.TagDirective:
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawDirective(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawDirective)}}
 	case doctree.TagFieldList:
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawFieldList(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawFieldList)}}
 	case doctree.TagDefinitionList:
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawDefinitionList(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawDefinitionList)}}
 	case doctree.TagLineBlock:
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawLineBlock(el)}}
 	case doctree.TagOptionList:
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawOptionList(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawOptionList)}}
 	case doctree.TagAttention, doctree.TagCaution, doctree.TagDanger,
 		doctree.TagErrorAdmonition, doctree.TagHint, doctree.TagImportant,
 		doctree.TagNote, doctree.TagTip, doctree.TagWarningAdmonition,
@@ -500,12 +542,12 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// closed set), so -- like field/definition lists above -- this
 		// falls back to a RawBlock rather than silently unwrapping to
 		// the bare content and losing which admonition it was.
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawAdmonition(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawAdmonition)}}
 	case doctree.TagCompound:
 		// docutils/rst v0.42.0+ -- structurally identical to the generic
 		// admonitions above, just a different tag/directive name; richdoc
 		// has no compound-paragraph block type either.
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawCompound(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawCompound)}}
 	case doctree.TagDecoration:
 		// docutils/rst v0.48.0+ -- a document-level singleton wrapping up
 		// to one <header> and one <footer>; richdoc has no document-
@@ -532,7 +574,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// class/name attributes, the same shape as every other
 		// already-handled directive in this switch, just for a whole
 		// top-level tag instead of a child nested under one.
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawContainer(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawContainer)}}
 	case doctree.TagRubric:
 		// docutils/rst v0.45.0+ -- richdoc has no rubric block type
 		// either. Without an explicit case here this fell through to the
@@ -553,7 +595,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// and content (the leading dedication/abstract <topic> case is
 		// already handled earlier, in leadingMeta, before this switch
 		// is ever reached for those two).
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawTopic(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawTopic)}}
 	case doctree.TagImage:
 		// docutils/rst v0.29.0+ -- a standalone ".. image::" (as
 		// opposed to one embedded in a substitution definition, which
@@ -584,7 +626,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// this falls back to a RawBlock the same way admonitions/
 		// topics do, rather than silently unwrapping to its image and
 		// losing the caption/legend/figure-level options entirely.
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawFigure(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawFigure)}}
 	case doctree.TagMeta:
 		// docutils/rst v0.30.0+ -- HTML/head metadata, a different
 		// concept from Document.Meta above (which is keyed by field
@@ -649,7 +691,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		if name := el.Attr("name"); name != "" && c.consumed[name] {
 			return nil
 		}
-		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawFootnoteDef(el)}}
+		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: c.rawSource(el, rawFootnoteDef)}}
 	default:
 		return c.convertBlocks(el.Children, level)
 	}
