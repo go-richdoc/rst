@@ -347,3 +347,23 @@ func TestEmbeddedAliasLinkText(t *testing.T) {
 		})
 	}
 }
+
+// TestLiteralBlockIndentedWithNoBreakSpaces pins the one thing
+// docutils/rst v0.135.0 changes in a converted document: a literal block
+// whose indentation mixes plain spaces with NO-BREAK SPACES is dedented by
+// its whole width, not by the plain spaces alone.
+//
+// pytest's own documentation writes one that way, and a CodeBlock
+// preserves what it is given — so the phantom indentation was visible in
+// every rendering. Two lines of the 1564-file corpus, and this is them.
+func TestLiteralBlockIndentedWithNoBreakSpaces(t *testing.T) {
+	const src = "Run it::\n\n     pytest one\n     pytest two\n"
+	doc, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := richdoc.CodeBlock{Text: "pytest one\npytest two"}
+	if len(doc.Blocks) != 2 || !reflect.DeepEqual(doc.Blocks[1], want) {
+		t.Errorf("Parse(%q) blocks =\n%#v\nwant the second to be:\n%#v", src, doc.Blocks, want)
+	}
+}
