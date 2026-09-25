@@ -66,10 +66,13 @@ func ParseWithOptions(src []byte, opts Options) (*richdoc.Document, error) {
 	// (docutils/rst v0.107.0+): docutils' PARSER rejects an option a
 	// directive does not declare, so a sphinx ":caption:" on a code
 	// block or ":label:" on an equation replaces the whole block with an
-	// error paragraph. Measured on that project's real-world corpus, 32
-	// of 1564 files carry such an option -- 32 documents that would
-	// arrive here having LOST their code or their maths. Off, the option
-	// is simply ignored and the block converts.
+	// error paragraph. Measured on that project's real-world corpus by
+	// parsing every file twice and comparing the TREES, 32 of 1564
+	// differ: 32 documents that would arrive here having lost their code,
+	// their maths, or -- since docutils/rst v0.133.0 wired the same check
+	// to fifteen more directives -- an admonition carrying sphinx's
+	// ":collapsible:". Off, the option is ignored and the block converts.
+	// TestSphinxOnlyOptionKeepsItsBlock is what holds this.
 	dopts.ReportUnknownDirectiveOptions = false
 	// The opposite direction, and the only one of the five this package
 	// turns ON: Document.Meta IS the promoted docinfo (see leadingMeta and
