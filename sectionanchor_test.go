@@ -502,3 +502,36 @@ func TestClassArgumentBlockIsNotAFieldList(t *testing.T) {
 		t.Errorf("the argument block came through as a field:\n%s", out)
 	}
 }
+
+// TestCSVTableWithADelimiterBecomesATable pins what docutils/rst v0.136.4
+// gives a converter: a csv-table written with ":delim:" is a real
+// richdoc.Table, header and rows, where the whole directive used to arrive
+// as a RawBlock holding its own source — upstream refused the directive
+// over that one option.
+//
+// sphinx's latex.rst writes two such tables inside list items.
+func TestCSVTableWithADelimiterBecomesATable(t *testing.T) {
+	const src = "- Commands:\n\n  .. csv-table::\n     :delim: ;\n     :header: Name; Maps to\n\n     ``a``; ``b``\n     ``c``; ``d``\n"
+	doc, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	list, ok := doc.Blocks[0].(richdoc.List)
+	if !ok || len(list.Items) != 1 || len(list.Items[0].Blocks) != 2 {
+		t.Fatalf("want a one-item list holding two blocks, got %#v", doc.Blocks[0])
+	}
+	table, ok := list.Items[0].Blocks[1].(richdoc.Table)
+	if !ok {
+		t.Fatalf("the second block is %T, want a Table", list.Items[0].Blocks[1])
+	}
+	wantHeader := []richdoc.Cell{
+		{Inlines: []richdoc.Inline{richdoc.Text{Value: "Name"}}},
+		{Inlines: []richdoc.Inline{richdoc.Text{Value: "Maps to"}}},
+	}
+	if !reflect.DeepEqual(table.Header, wantHeader) {
+		t.Errorf("header =\n%#v\nwant:\n%#v", table.Header, wantHeader)
+	}
+	if len(table.Rows) != 2 {
+		t.Errorf("want two body rows, got %d: %#v", len(table.Rows), table.Rows)
+	}
+}
