@@ -138,3 +138,75 @@ func TestCustomHeadingAnchorIsStillWritten(t *testing.T) {
 		})
 	}
 }
+
+// TestAdornmentTriplesDoNotBecomeHeadings pins three shapes that
+// docutils/rst v0.136.7 changed underneath this package. A punctuation
+// line after an overline reaches docutils' own Line.underline, never the
+// three-line Line.text path, so three IDENTICAL adornment lines are not a
+// title at all.
+//
+// Each case was probed, not reasoned about, and each was wrong here before
+// the bump: "====" three times produced a Heading whose text was "====";
+// "..." three times produced a Heading and DROPPED its third line; and the
+// docutils testsuite's own section_headers[32] came out with heading levels
+// 1, 2, 3 where the third section returns to the document level, because
+// its underline style is the one already established there.
+//
+// The last assertion is the CONTROL: an ordinary two-level document still
+// nests, so "levels come from the adornment styles in order of first
+// appearance" is not quietly replaced by "every heading is level 1".
+func TestAdornmentTriplesDoNotBecomeHeadings(t *testing.T) {
+	t.Run("three identical long adornments are a refused block, not a heading", func(t *testing.T) {
+		d, err := Parse([]byte("====\n====\n====\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range d.Blocks {
+			if h, ok := b.(richdoc.Heading); ok {
+				t.Errorf("built a heading %q from an invalid marker", plainTextOf(h.Inlines))
+			}
+		}
+	})
+	t.Run("a demoted short adornment keeps the line after its section", func(t *testing.T) {
+		d, err := Parse([]byte("...\n...\n...\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(d.Blocks) != 2 {
+			t.Fatalf("want a heading and a paragraph, got %d blocks: %+v", len(d.Blocks), d.Blocks)
+		}
+		if _, ok := d.Blocks[1].(richdoc.Paragraph); !ok {
+			t.Errorf("the third line was lost: %T", d.Blocks[1])
+		}
+	})
+	t.Run("the testsuite's section_headers[32] nests 1, 2, 1", func(t *testing.T) {
+		d, err := Parse([]byte("...\n...\n\n...\n---\n\n...\n...\n...\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var levels []int
+		for _, b := range d.Blocks {
+			if h, ok := b.(richdoc.Heading); ok {
+				levels = append(levels, h.Level)
+			}
+		}
+		if len(levels) != 3 || levels[0] != 1 || levels[1] != 2 || levels[2] != 1 {
+			t.Errorf("heading levels = %v, want [1 2 1]", levels)
+		}
+	})
+	t.Run("CONTROL: an ordinary two-level document still nests", func(t *testing.T) {
+		d, err := Parse([]byte("Top\n===\n\nSub\n---\n\nbody\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var levels []int
+		for _, b := range d.Blocks {
+			if h, ok := b.(richdoc.Heading); ok {
+				levels = append(levels, h.Level)
+			}
+		}
+		if len(levels) != 2 || levels[0] != 1 || levels[1] != 2 {
+			t.Errorf("heading levels = %v, want [1 2]", levels)
+		}
+	})
+}
