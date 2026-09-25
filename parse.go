@@ -127,7 +127,26 @@ func ParseWithOptions(src []byte, opts Options) (*richdoc.Document, error) {
 // dedicated node for either).
 func leadingMeta(children []doctree.Node) (map[string]string, []doctree.Node) {
 	meta := map[string]string{}
-	i := 0
+	// Any leading <meta> nodes are STEPPED OVER, not searched through --
+	// docutils/rst v0.136.5 hoists a ".. meta::" directive's own nodes to
+	// docutils' own insertion point, which is ahead of a leading field
+	// list, and its DocInfo transform finds the list by skipping them
+	// (first_child_not_matching_class(nodes.PreBibliographic)). Reading
+	// children[0] only, a document with BOTH lost every bibliographic
+	// field it had: Meta came back empty and the <docinfo> went on to
+	// convertBlockNode, which has no case for one and drops it -- a
+	// silent content loss, not a missing convenience. The meta nodes
+	// themselves stay in the returned children, where rawMeta renders
+	// each one.
+	metaRun := 0
+	for metaRun < len(children) {
+		el, ok := children[metaRun].(*doctree.Element)
+		if !ok || el.Tag != doctree.TagMeta {
+			break
+		}
+		metaRun++
+	}
+	i := metaRun
 	if i < len(children) {
 		if el, ok := children[i].(*doctree.Element); ok {
 			switch el.Tag {
@@ -151,6 +170,9 @@ func leadingMeta(children []doctree.Node) (map[string]string, []doctree.Node) {
 		}
 		meta[class] = topicText(topic)
 		i++
+	}
+	if metaRun > 0 {
+		return meta, append(append([]doctree.Node{}, children[:metaRun]...), children[i:]...)
 	}
 	return meta, children[i:]
 }
