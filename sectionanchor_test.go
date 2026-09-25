@@ -5,6 +5,7 @@ package rst
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-richdoc/richdoc"
@@ -390,5 +391,85 @@ func TestCSVCellSpanningLines(t *testing.T) {
 	got := table.Rows[0][1].Inlines
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("the second cell =\n%#v\nwant:\n%#v", got, want)
+	}
+}
+
+// TestDiagnosticInsideAnAdmonition pins what docutils/rst v0.136.2
+// changes here: a duplicate-name notice raised inside a ".. note::" is
+// now the note's own first child, where it used to precede the note.
+//
+// It is visible only under KeepDiagnostics — the mode that exists for a
+// tool converting a document in order to report on it — and only in PEP
+// 813 across the 1564-file corpus, 26 lines of it. The lenient default
+// drops the message either way, which the second case is here to say.
+func TestDiagnosticInsideAnAdmonition(t *testing.T) {
+	const src = "`A <http://e.org/1>`_\n\n.. note::\n\n   `A <http://e.org/2>`_\n"
+
+	kept, err := ParseWithOptions([]byte(src), Options{KeepDiagnostics: true})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   Duplicate implicit target name: \"a\".\n\n   A"}
+	if len(kept.Blocks) != 2 || !reflect.DeepEqual(kept.Blocks[1], want) {
+		t.Errorf("with KeepDiagnostics the note =\n%#v\nwant:\n%#v", kept.Blocks, want)
+	}
+
+	// CONTROL: the default drops it, so the note keeps only its content.
+	lenient, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	wantLenient := richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   A"}
+	if len(lenient.Blocks) != 2 || !reflect.DeepEqual(lenient.Blocks[1], wantLenient) {
+		t.Errorf("the default note =\n%#v\nwant:\n%#v", lenient.Blocks, wantLenient)
+	}
+}
+
+// TestDiagnosticsNeverLeakIntoARawBlock covers the OTHER half of the
+// same discovery, and it predates docutils/rst v0.136.2 by a long way:
+// every raw* reconstruction walks its element's own children, so a
+// <system_message> nested inside a construct that becomes a RawBlock
+// reached the output as prose. The TagSystemMessage case that drops
+// diagnostics is never consulted for a subtree already turned into reST
+// source.
+//
+// The shape is taken from sphinx's own theming.rst, reduced: a bullet
+// list inside a definition body, each item ending in an unknown
+// ".. versionadded::". Three real-world corpus files ended with a
+// sentence like `Duplicate explicit target name: "versionadded".` sitting
+// in the prose as if an author had written it.
+func TestDiagnosticsNeverLeakIntoARawBlock(t *testing.T) {
+	const src = "term\n" +
+		"  - **a** (bool): first.\n" +
+		"    Defaults to ``True``.\n\n" +
+		"    .. versionadded:: 3.1\n\n" +
+		"  - **b** (bool): second.\n" +
+		"    Defaults to ``False``.\n\n" +
+		"    .. versionadded:: 3.1\n"
+
+	doc, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out, err := Write(doc)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if strings.Contains(string(out), "Duplicate explicit target name") {
+		t.Errorf("a diagnostic reached the converted document as prose:\n%s", out)
+	}
+
+	// CONTROL: with KeepDiagnostics the same message must still be there.
+	// Without this, dropping diagnostics EVERYWHERE would pass.
+	kept, err := ParseWithOptions([]byte(src), Options{KeepDiagnostics: true})
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	keptOut, err := Write(kept)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if !strings.Contains(string(keptOut), "Duplicate explicit target name") {
+		t.Errorf("KeepDiagnostics dropped a message it is meant to keep:\n%s", keptOut)
 	}
 }
