@@ -240,3 +240,60 @@ func TestBacktrackedURIReachesTheDocument(t *testing.T) {
 		})
 	}
 }
+
+// TestSphinxOnlyOptionKeepsItsBlock holds the one Option this package
+// turns OFF for the reader's sake: docutils' parser rejects an option a
+// directive does not declare, which replaces the whole block with an
+// error. Thirty-two of the 1564 real-world corpus files carry such an
+// option, and docutils/rst v0.133.0 extended the check from two
+// directives to seventeen — so this is the difference between converting
+// those documents and converting an apology for them.
+//
+// It asserts the block's TYPE, not its text. A first version asserted
+// that the content was still present and could not fail: dropping a
+// system_message keeps the literal_block inside it (that is deliberate,
+// see convertBlockElement), so the author's text survives the strict
+// parse too — as a CodeBlock holding the whole directive source. What
+// the flag actually decides is whether a code block arrives as a
+// CodeBlock with its LANGUAGE, an equation as a MathBlock, and an
+// admonition as its own reconstruction, or whether all three arrive as
+// one quoted blob.
+func TestSphinxOnlyOptionKeepsItsBlock(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		want   richdoc.Block
+	}{
+		{
+			"sphinx :collapsible: on a note",
+			".. note::\n   :collapsible:\n\n   Body text.\n",
+			richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   Body text."},
+		},
+		{
+			"sphinx :caption: on a code block",
+			".. code:: go\n   :caption: hi\n\n   x := 1\n",
+			richdoc.CodeBlock{Language: "go", Text: "x := 1"},
+		},
+		{
+			"sphinx :label: on an equation",
+			".. math::\n   :label: eq\n\n   a^2\n",
+			richdoc.MathBlock{TeX: "a^2"},
+		},
+		{
+			"an undeclared option on a rubric",
+			".. rubric:: R\n   :bogus: x\n",
+			richdoc.RawBlock{Format: "rst", Text: ".. rubric:: R"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if len(doc.Blocks) != 1 || !reflect.DeepEqual(doc.Blocks[0], tc.want) {
+				t.Errorf("Parse(%q) blocks =\n%#v\nwant one block:\n%#v", tc.source, doc.Blocks, tc.want)
+			}
+		})
+	}
+}
