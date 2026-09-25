@@ -473,3 +473,32 @@ func TestDiagnosticsNeverLeakIntoARawBlock(t *testing.T) {
 		t.Errorf("KeepDiagnostics dropped a message it is meant to keep:\n%s", keptOut)
 	}
 }
+
+// TestClassArgumentBlockIsNotAFieldList pins what docutils/rst v0.136.3
+// changes here: ".. class:: Sphinx" with ":no-index:" on the next line is
+// ONE argument block — the two classes — not a class plus a field list.
+//
+// Four converted documents (sphinx's extdev/appapi and three cpp-domain
+// test roots) carried a stray ":no-index:" line as a field list before
+// this; the classes go on the content, which for a converter means they
+// vanish, and what is left is the content alone.
+func TestClassArgumentBlockIsNotAFieldList(t *testing.T) {
+	const src = ".. class:: Sphinx\n   :no-index:\n\n   The method does a thing.\n"
+	doc, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	want := []richdoc.Block{richdoc.Paragraph{Inlines: []richdoc.Inline{
+		richdoc.Text{Value: "The method does a thing."},
+	}}}
+	if !reflect.DeepEqual(doc.Blocks, want) {
+		t.Errorf("Parse(%q) blocks =\n%#v\nwant:\n%#v", src, doc.Blocks, want)
+	}
+	out, err := Write(doc)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if strings.Contains(string(out), ":no-index:") {
+		t.Errorf("the argument block came through as a field:\n%s", out)
+	}
+}
