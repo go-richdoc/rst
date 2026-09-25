@@ -367,3 +367,28 @@ func TestLiteralBlockIndentedWithNoBreakSpaces(t *testing.T) {
 		t.Errorf("Parse(%q) blocks =\n%#v\nwant the second to be:\n%#v", src, doc.Blocks, want)
 	}
 }
+
+// TestCSVCellSpanningLines pins what docutils/rst v0.136.0 changes in a
+// converted document: a quoted csv-table cell spanning several source
+// lines is parsed as a BLOCK, so a cell whose opening quote sits alone on
+// its line no longer begins with an empty line.
+//
+// PEP 578 writes several, and its table is the only thing in the
+// 1564-file corpus this moved — 104 lines of it, since one cell's text
+// changes every column width around it.
+func TestCSVCellSpanningLines(t *testing.T) {
+	const src = ".. csv-table::\n\n   ``a``, \"\n   Detect dynamic code compilation.\n   \"\n"
+	doc, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	table, ok := doc.Blocks[0].(richdoc.Table)
+	if !ok {
+		t.Fatalf("first block is %T, want a Table", doc.Blocks[0])
+	}
+	want := []richdoc.Inline{richdoc.Text{Value: "Detect dynamic code compilation."}}
+	got := table.Rows[0][1].Inlines
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the second cell =\n%#v\nwant:\n%#v", got, want)
+	}
+}
