@@ -197,3 +197,87 @@ func TestCellInlinesSingleParagraphUnaffected(t *testing.T) {
 		t.Errorf("simple table = %#v, want %#v", tbl, want)
 	}
 }
+
+// TestMalformedTableKeepsItsSource pins what docutils/rst v0.136.8 changed
+// underneath this package: the malformed-table failure exits that used to
+// be silent now produce docutils' "Malformed table." ERROR, so the block
+// takes the same path every refused construct here takes -- a CodeBlock
+// holding the source as written -- instead of arriving as a table or as
+// reflowed prose.
+//
+// The first case is the one that matters most: on v0.136.7 upstream BUILT
+// a table for it (a bottom border with no blank line after it), so this
+// package emitted a Table. The reference refuses it, and a table that is
+// not there is not something a writer can round-trip back.
+//
+// The last case is the CONTROL, and it is the defect that reporting these
+// exposed upstream: prose containing two "=" signs has two runs of "=",
+// which is what an UNANCHORED top-border pattern accepts. It must stay a
+// list item with its text intact.
+func TestMalformedTableKeepsItsSource(t *testing.T) {
+	cases := []struct {
+		name, src, wantText string
+	}{
+		{
+			"a bottom border with no blank line after it is not a table",
+			"======  ======\na       b\n======  ======\ntext\n",
+			"======  ======",
+		},
+		{
+			"a bottom border of the wrong width",
+			"=======  =====  ======\nA bad table     cell 2\ncell 3          cell 4\n============  ======\n",
+			"A bad table     cell 2",
+		},
+		{
+			"a grid table whose cells are not rectangles",
+			"+--------------+-------------+\n| A bad table. |             |\n+--------------+             |\n| Cells must be rectangles.  |\n+----------------------------+\n",
+			"| Cells must be rectangles.  |",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := Parse([]byte(tc.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var code *richdoc.CodeBlock
+			for i := range d.Blocks {
+				if _, ok := d.Blocks[i].(richdoc.Table); ok {
+					t.Errorf("a malformed table arrived as a Table: %+v", d.Blocks[i])
+				}
+				if c, ok := d.Blocks[i].(richdoc.CodeBlock); ok {
+					code = &c
+				}
+			}
+			if code == nil {
+				t.Fatalf("no CodeBlock holding the refused source: %+v", d.Blocks)
+			}
+			if !strings.Contains(code.Text, tc.wantText) {
+				t.Errorf("the source line %q did not survive:\n%s", tc.wantText, code.Text)
+			}
+		})
+	}
+	t.Run("CONTROL: prose with two = signs is not a table at all", func(t *testing.T) {
+		d, err := Parse([]byte("- In examples we use u = Unicode object and s = Python string\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(d.Blocks) != 1 {
+			t.Fatalf("want one list, got %+v", d.Blocks)
+		}
+		l, ok := d.Blocks[0].(richdoc.List)
+		if !ok {
+			t.Fatalf("want a List, got %T", d.Blocks[0])
+		}
+		if len(l.Items) != 1 || len(l.Items[0].Blocks) != 1 {
+			t.Fatalf("want one item with one block: %+v", l)
+		}
+		p, ok := l.Items[0].Blocks[0].(richdoc.Paragraph)
+		if !ok {
+			t.Fatalf("want a Paragraph in the item, got %T", l.Items[0].Blocks[0])
+		}
+		if got := plainTextOf(p.Inlines); !strings.Contains(got, "u = Unicode object and s = Python string") {
+			t.Errorf("the text did not survive: %q", got)
+		}
+	})
+}
