@@ -95,7 +95,7 @@ func (w *writer) writeBlocks(blocks []richdoc.Block) string {
 func (w *writer) writeBlock(b richdoc.Block, level int) string {
 	switch n := b.(type) {
 	case richdoc.Heading:
-		return writeHeading(n)
+		return w.writeHeading(n)
 	case richdoc.Paragraph:
 		// A paragraph holding nothing but an image — or a link around
 		// nothing but an image — is what an ".. image::" directive
@@ -148,7 +148,7 @@ func (w *writer) writeBlock(b richdoc.Block, level int) string {
 // level ever seen, then '-', '~', '"', '^', deeper levels repeating the last.
 var titleChars = []byte{'=', '-', '~', '"', '^'}
 
-func writeHeading(h richdoc.Heading) string {
+func (w *writer) writeHeading(h richdoc.Heading) string {
 	level := h.Level
 	if level < 1 {
 		level = 1
@@ -157,7 +157,26 @@ func writeHeading(h richdoc.Heading) string {
 	if idx >= len(titleChars) {
 		idx = len(titleChars) - 1
 	}
-	text := writeInlinesPlain(h.Inlines)
+	// The title line carries its MARKUP, and the underline is measured
+	// against that line. Writing the plain text instead lost every emphasis,
+	// literal and role inside a heading -- 242 of the 1564 real-world corpus
+	// files, found by comparing the round-tripped TREE rather than the
+	// output (the flattened text is stable on a second write, so an
+	// output-to-output check calls it fine).
+	//
+	// The reasoning it replaces was that an underline must match the title's
+	// VISIBLE width. docutils only warns when an underline is SHORTER than
+	// its title line ("column_width(title) > len(underline)", states.py); a
+	// longer one is perfectly legal. So underlining the rendered line costs
+	// nothing and keeps the markup.
+	text := w.writeInlines(h.Inlines)
+	plain := writeInlinesPlain(h.Inlines)
+	if strings.ContainsAny(text, "\n") {
+		// Nothing inline should render a newline, but a title that did
+		// would break its own underline: fall back rather than emit
+		// something that cannot read back.
+		text = plain
+	}
 	under := strings.Repeat(string(titleChars[idx]), displayWidth(text))
 	s := text + "\n" + under
 	// Emit an explicit target ONLY when the heading's own title would not
@@ -170,7 +189,9 @@ func writeHeading(h richdoc.Heading) string {
 	// test caught the writer emitting reST that no longer read back as
 	// what it was written from). MakeID is the upstream rule itself
 	// rather than a local reimplementation, so the two cannot drift.
-	if h.ID != "" && h.ID != docrst.MakeID(text) && !generatedHeadingID(h.ID, text) {
+	// The implicit target a section gets is named after its TEXT, not its
+	// markup, so the id comparison stays on the plain form.
+	if h.ID != "" && h.ID != docrst.MakeID(plain) && !generatedHeadingID(h.ID, plain) {
 		s = ".. _" + h.ID + ":\n\n" + s
 	}
 	return s
