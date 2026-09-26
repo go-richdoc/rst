@@ -873,7 +873,18 @@ func rawChildSource(n doctree.Node) string {
 		return rawListItems(el, func(i int) string {
 			return el.Attr("prefix") + strconv.Itoa(start+i) + suffix + " "
 		})
+	case doctree.TagParagraph:
+		// A paragraph inside a reconstructed construct keeps its INLINE
+		// markup. The fallback below returns a node's text, so every link,
+		// emphasis, literal and role inside a ".. note::" body was lost --
+		// PEP 6's own note reads "documented in `the devguide <...>`__" and
+		// came back as "documented in the devguide", the link gone. 270 of
+		// the 1564 corpus files reach this case; v0.136.x fixed the TITLE
+		// paths and left the content one.
+		return strings.TrimSpace(inlineSourceOf(el))
 	case doctree.TagLiteralBlock:
+		// Verbatim on purpose: docutils does not parse markup inside a
+		// literal block, so its text IS its source.
 		return "::\n\n" + indentBlock(doctree.AsText(el))
 	case doctree.TagBlockQuote:
 		return indentBlock(rawChildren(el))

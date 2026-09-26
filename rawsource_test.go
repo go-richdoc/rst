@@ -160,3 +160,68 @@ func TestReconstructedInlineMarkupSurvives(t *testing.T) {
 		}
 	})
 }
+
+// TestReconstructedParagraphKeepsItsMarkup is the CONTENT half of
+// TestReconstructedInlineMarkupSurvives. rawChildSource had no case for a
+// <paragraph>, so it fell to the text fallback: every link, emphasis, literal
+// and role inside a ".. note::", topic, container, block quote or list item
+// that gets reconstructed as reST source was dropped.
+//
+// PEP 6's own note is the witness: "documented in `the devguide <...>`__" came
+// back as "documented in the devguide", the link simply gone. 237 of the 1564
+// real-world corpus files change; source-vs-output equivalence 800 -> 843.
+//
+// The literal block is the CONTROL, and it is why this is a per-tag decision
+// rather than "stop using AsText": docutils does not parse markup inside one,
+// so its text IS its source and rendering it through the inline writer would
+// corrupt it.
+func TestReconstructedParagraphKeepsItsMarkup(t *testing.T) {
+	cases := []struct {
+		name, source, want string
+	}{
+		{
+			"a link inside a note",
+			".. note:: obsolete.\n   see `the devguide <https://devguide.python.org/x/>`__.\n",
+			"`the devguide <https://devguide.python.org/x/>`__",
+		},
+		{"emphasis inside a note", ".. note::\n\n   a *em* b\n", "a *em* b"},
+		{"a literal inside a topic", ".. topic:: T\n\n   a ``lit`` b\n", "a ``lit`` b"},
+		{"a role inside a container", ".. container:: cls\n\n   see :pep:`101` now\n", "`PEP 101 <https://peps.python.org/pep-0101>`__"},
+		{
+			"CONTROL: a literal block inside a note stays verbatim",
+			".. note::\n\n   ::\n\n      *not* markup\n",
+			"*not* markup",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Write(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(out), tc.want) {
+				t.Errorf("want %q in the output:\n%s", tc.want, out)
+			}
+		})
+	}
+	// And the whole point, end to end: the link must still BE a link after a
+	// round trip, not merely appear in the text.
+	t.Run("the link survives a round trip as a link", func(t *testing.T) {
+		src := ".. note:: see `the devguide <https://devguide.python.org/x/>`__.\n"
+		d, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := Write(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(out), "<https://devguide.python.org/x/>") {
+			t.Fatalf("the URI is gone:\n%s", out)
+		}
+	})
+}
