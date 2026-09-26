@@ -409,7 +409,11 @@ func TestDiagnosticInsideAnAdmonition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	want := richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   Duplicate implicit target name: \"a\".\n\n   A"}
+	// The note's own content keeps its LINK. Both expectations here used to
+	// read plain "A", which encoded the flattening the reconstruction did to
+	// every paragraph inside a rebuilt construct; the diagnostic half of this
+	// test is what it is about, and that half is unchanged.
+	want := richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   Duplicate implicit target name: \"a\".\n\n   `A <http://e.org/2>`__"}
 	if len(kept.Blocks) != 2 || !reflect.DeepEqual(kept.Blocks[1], want) {
 		t.Errorf("with KeepDiagnostics the note =\n%#v\nwant:\n%#v", kept.Blocks, want)
 	}
@@ -419,7 +423,7 @@ func TestDiagnosticInsideAnAdmonition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	wantLenient := richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   A"}
+	wantLenient := richdoc.RawBlock{Format: "rst", Text: ".. note::\n\n   `A <http://e.org/2>`__"}
 	if len(lenient.Blocks) != 2 || !reflect.DeepEqual(lenient.Blocks[1], wantLenient) {
 		t.Errorf("the default note =\n%#v\nwant:\n%#v", lenient.Blocks, wantLenient)
 	}

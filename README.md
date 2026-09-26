@@ -134,8 +134,16 @@ reproduces it.
 Two containers deliberately stay verbatim, because docutils does not parse
 them for markup either: an option-list flag and a comment. And one boundary
 remains by construction: a LEADING field list becomes `Document.Meta`, a
-`map[string]string` with nowhere to put markup. The block-level CONTENT of
-these fallbacks is still flattened per child block, which is a different
+`map[string]string` with nowhere to put markup. A PARAGRAPH inside one of these
+fallbacks keeps its inline markup too: `rawChildSource` had no case for one,
+so it fell to the text fallback and every link, emphasis, literal and role
+inside a `.. note::`, topic, container, block quote or reconstructed list item
+was dropped. PEP 6's own note reads "documented in
+`` `the devguide <...>`__ `` and came back as "documented in the devguide",
+the link simply gone: 237 of the 1564 files. A LITERAL block stays verbatim
+beside it, because docutils does not parse markup inside one — which is why
+this is a per-tag decision rather than "stop calling AsText". The block-level
+STRUCTURE of these fallbacks is still flattened per child block, a different
 question from the inline one.
 
 ### Write (richdoc → reST)
