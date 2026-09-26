@@ -3,6 +3,8 @@ package rst
 import (
 	"strings"
 	"testing"
+
+	"github.com/go-richdoc/richdoc"
 )
 
 // TestPendingIsNotRawSourceContent guards a leak the docutils/rst
@@ -222,6 +224,79 @@ func TestReconstructedParagraphKeepsItsMarkup(t *testing.T) {
 		}
 		if !strings.Contains(string(out), "<https://devguide.python.org/x/>") {
 			t.Fatalf("the URI is gone:\n%s", out)
+		}
+	})
+}
+
+// TestNumberedCodeBlockKeepsTheCodeOnly pins what ":number-lines:" must not do
+// to a code block. docutils GENERATES the numbers and puts them in
+// <inline class="ln"> children of the literal block ("1 " before each line), so
+// taking the node's whole text folded them into the code:
+//
+//	.. code:: python
+//	   :number-lines:
+//
+//	   x = 1
+//
+// came back as ".. code:: python" with the body "1 x = 1" -- no longer the
+// program the author wrote, and valid reST, so nothing reported it.
+//
+// richdoc.CodeBlock has no line-numbering flag, so the OPTION cannot survive.
+// That is a stated boundary; baking generated numbers into the code is the one
+// outcome that is wrong under any model.
+//
+// No corpus document uses the option, so the corpus delta is ZERO and this test
+// is the only witness. Worth saying: a fix whose measured delta is zero looks
+// unnecessary next to one worth hundreds, and this one prevents a code block
+// from becoming uncompilable.
+func TestNumberedCodeBlockKeepsTheCodeOnly(t *testing.T) {
+	t.Run("the numbers do not reach the code", func(t *testing.T) {
+		d, err := Parse([]byte(".. code:: python\n   :number-lines:\n\n   x = 1\n   y = 2\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(d.Blocks) != 1 {
+			t.Fatalf("want one block, got %+v", d.Blocks)
+		}
+		cb, ok := d.Blocks[0].(richdoc.CodeBlock)
+		if !ok {
+			t.Fatalf("want a CodeBlock, got %T", d.Blocks[0])
+		}
+		if cb.Text != "x = 1\ny = 2" {
+			t.Errorf("code = %q, want the program without the generated numbers", cb.Text)
+		}
+		if cb.Language != "python" {
+			t.Errorf("language = %q, want python", cb.Language)
+		}
+		out, err := Write(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(out), "1 x = 1") {
+			t.Errorf("the numbers reached the written code:\n%s", out)
+		}
+	})
+	t.Run("the rule is positional: code starting with a digit survives", func(t *testing.T) {
+		// NOT a control -- it fails without the fix too. Its job is to show
+		// the numbers are dropped because of WHERE they sit (in an
+		// <inline class="ln">), not because they look like numbers: a stripper
+		// that matched a leading digit would eat this line's own "1".
+		d, err := Parse([]byte(".. code:: python\n   :number-lines:\n\n   1 + 1\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cb := d.Blocks[0].(richdoc.CodeBlock)
+		if cb.Text != "1 + 1" {
+			t.Errorf("code = %q, want %q", cb.Text, "1 + 1")
+		}
+	})
+	t.Run("CONTROL: a block with no option is untouched", func(t *testing.T) {
+		d, err := Parse([]byte(".. code:: python\n\n   x = 1\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cb := d.Blocks[0].(richdoc.CodeBlock); cb.Text != "x = 1" {
+			t.Errorf("code = %q", cb.Text)
 		}
 	})
 }

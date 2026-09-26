@@ -513,7 +513,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 	case doctree.TagTransition:
 		return []richdoc.Block{richdoc.ThematicBreak{}}
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock:
-		return []richdoc.Block{richdoc.CodeBlock{Language: codeLanguage(el), Text: doctree.AsText(el)}}
+		return []richdoc.Block{richdoc.CodeBlock{Language: codeLanguage(el), Text: codeText(el)}}
 	case doctree.TagMathBlock:
 		// docutils/rst v0.52.0+ (".. math::") — richdoc has a REAL
 		// block-math type of its own, so this maps straight onto it
@@ -926,7 +926,7 @@ func (c *converter) cellBlockInlines(n doctree.Node) []richdoc.Inline {
 		doctree.TagFieldName, doctree.TagFieldBody:
 		return c.cellInlines(el.Children)
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock, doctree.TagLineBlock:
-		return []richdoc.Inline{richdoc.Code{Value: doctree.AsText(el)}}
+		return []richdoc.Inline{richdoc.Code{Value: codeText(el)}}
 	default:
 		return c.convertInlineElement(el)
 	}
@@ -1190,6 +1190,28 @@ func anchorID(el *doctree.Element) string {
 // at PARSE time with pygments and emitting token spans, so there is no
 // reference behaviour to copy here -- only the class list, read the way
 // the directive wrote it.
+// codeText is a literal block's own text WITHOUT the line numbers
+// ":number-lines:" generates. docutils puts those in <inline class="ln">
+// children of the block (an "1 " before each line), and taking the node's whole
+// text folded them into the CODE: ".. code:: python" with :number-lines: and
+// "x = 1" came back as "1 x = 1", which is no longer the program the author
+// wrote. richdoc.CodeBlock has no line-numbering flag, so the OPTION cannot
+// survive -- but keeping the code correct matters more than keeping a
+// presentation option, and baking generated numbers into it is the one outcome
+// that is wrong either way.
+func codeText(el *doctree.Element) string {
+	var b strings.Builder
+	for _, ch := range el.Children {
+		if ce, ok := ch.(*doctree.Element); ok {
+			if ce.Tag == doctree.TagInline && strings.Contains(" "+ce.Attr("class")+" ", " ln ") {
+				continue
+			}
+		}
+		b.WriteString(doctree.AsText(ch))
+	}
+	return b.String()
+}
+
 func codeLanguage(el *doctree.Element) string {
 	classes := strings.Fields(el.Attrs["class"])
 	if len(classes) < 2 || classes[0] != "code" {
