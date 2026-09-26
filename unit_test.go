@@ -1197,9 +1197,18 @@ func TestStandaloneAddressBoundaries(t *testing.T) {
 	}{
 		{
 			// "/" is an email character, so this is one address.
-			"a slash-bearing address is one link",
+			// A bare address is written back BARE (v0.40.0 of this
+			// package wrote the explicit form here, which this case
+			// pinned): docutils recognizes it standalone and supplies the
+			// "mailto:" the source never wrote, so spelling it out put a
+			// reference in the document where the author had plain text.
+			// The doctree of this output is now identical to the doctree of
+			// the input -- checked, including the slash, which is an email
+			// character in docutils' own emailc class and so keeps this one
+			// address whole.
+			"a slash-bearing address is one link, written back as itself",
 			"posted to comp.lang.python/python-list@python.org under a\n",
-			"posted to `comp.lang.python/python-list@python.org <mailto:comp.lang.python/python-list@python.org>`__ under a\n",
+			"posted to comp.lang.python/python-list@python.org under a\n",
 		},
 		{
 			"an unrecognized scheme stays text",

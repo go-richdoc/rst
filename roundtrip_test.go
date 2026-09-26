@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-docutils/docutils/doctree"
+	docrst "github.com/go-docutils/docutils/rst"
 	"github.com/go-richdoc/richdoc"
 )
 
@@ -161,4 +163,56 @@ func TestHeadingKeepsItsInlineMarkup(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBareAddressStaysBare pins the writer's treatment of a standalone email
+// address, and it exists because of a judge built OUTSIDE the round trip:
+// parse the original source and the written output with the same reST parser
+// and diff those two doctrees (/Users/Shared/rstcorpus/fidprobe). A
+// richdoc-to-richdoc comparison cannot see this one -- both sides hold the
+// same Link -- and an output-to-output comparison cannot either, because the
+// explicit form is stable once written.
+//
+// docutils recognizes a bare address standalone and supplies the "mailto:"
+// URI the source never wrote, so writing the address back as
+// "`a@b <mailto:a@b>`__" put an explicit reference where the author had plain
+// text. It was the largest single difference over the 1564-file corpus.
+//
+// The last two cases are the CONTROLS: a bare URL was already handled by the
+// same rule one layer up, and a link whose TEXT differs from its address
+// still needs the explicit form -- "write it bare" must not become "write
+// every mailto: bare".
+func TestBareAddressStaysBare(t *testing.T) {
+	cases := []struct {
+		name, source, want string
+	}{
+		{"a bare address", "mail one@example.com here\n", "mail one@example.com here\n"},
+		{"a slash-bearing address stays one address", "posted to comp.lang.python/python-list@python.org under a\n", "posted to comp.lang.python/python-list@python.org under a\n"},
+		{"an address in angle brackets", "ask <one@example.com> about it\n", "ask <one@example.com> about it\n"},
+		{"CONTROL: a bare URL was already bare", "see https://example.com/p here\n", "see https://example.com/p here\n"},
+		{"CONTROL: text different from the address keeps the explicit form", "mail `write to me <mailto:one@example.com>`__ here\n", "mail `write to me <mailto:one@example.com>`__ here\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Write(d)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(out) != tc.want {
+				t.Errorf("got  %q\nwant %q", out, tc.want)
+			}
+			// And the judge this came from: the two doctrees must agree.
+			if a, b := dumpOf(tc.source), dumpOf(string(out)); a != b {
+				t.Errorf("the source and the output do not parse alike:\n%s\n%s", a, b)
+			}
+		})
+	}
+}
+
+func dumpOf(src string) string {
+	return doctree.Dump(docrst.Parse(src))
 }
