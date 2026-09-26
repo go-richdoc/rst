@@ -5,6 +5,7 @@ package rst
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-richdoc/richdoc"
@@ -208,5 +209,71 @@ func TestAdornmentTriplesDoNotBecomeHeadings(t *testing.T) {
 		if len(levels) != 2 || levels[0] != 1 || levels[1] != 2 {
 			t.Errorf("heading levels = %v, want [1 2]", levels)
 		}
+	})
+}
+
+// TestNestedTitleAttemptKeepsItsSource pins what docutils/rst v0.136.9
+// changed underneath this package. A section title cannot appear inside a
+// block quote or a list item, and the reference reports one there
+// ("Unexpected section title.") with the offending two lines quoted --
+// including when the underline is under four characters, which upstream
+// used to read as ordinary text.
+//
+// So "dup" over "===" inside a block quote arrived here as a PARAGRAPH
+// whose text was "dup ===", the line break gone and the adornment glued
+// on. It now takes the path every refused construct takes: a CodeBlock
+// holding the source as written, which a writer can put back.
+//
+// The control is the top level, where the same two lines are a real
+// heading -- the distinction this whole rule is about.
+func TestNestedTitleAttemptKeepsItsSource(t *testing.T) {
+	for _, tc := range []struct{ name, src string }{
+		{"in a block quote", "intro\n\n   dup\n   ===\n\nlast\n"},
+		{"a demoted adornment in a block quote", "intro\n\n   ...\n   ===\n\nlast\n"},
+		{"in a bullet item", "intro\n\n- dup\n  ===\n\nlast\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d, err := Parse([]byte(tc.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := ""
+			var walk func([]richdoc.Block)
+			walk = func(bs []richdoc.Block) {
+				for _, b := range bs {
+					switch v := b.(type) {
+					case richdoc.CodeBlock:
+						found = v.Text
+					case richdoc.BlockQuote:
+						walk(v.Blocks)
+					case richdoc.List:
+						for _, it := range v.Items {
+							walk(it.Blocks)
+						}
+					case richdoc.Heading:
+						t.Errorf("built a heading where a title is not allowed: %q", plainTextOf(v.Inlines))
+					}
+				}
+			}
+			walk(d.Blocks)
+			if !strings.Contains(found, "===") {
+				t.Errorf("the refused source did not survive as a code block: %q\n%+v", found, d.Blocks)
+			}
+			if strings.Contains(found, "dup ===") {
+				t.Errorf("the line break was lost, so the source cannot be written back: %q", found)
+			}
+		})
+	}
+	t.Run("CONTROL: at the top level the same two lines are a heading", func(t *testing.T) {
+		d, err := Parse([]byte("intro\n\ndup\n===\n\nlast\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range d.Blocks {
+			if h, ok := b.(richdoc.Heading); ok && plainTextOf(h.Inlines) == "dup" {
+				return
+			}
+		}
+		t.Errorf("no heading at the top level: %+v", d.Blocks)
 	})
 }
