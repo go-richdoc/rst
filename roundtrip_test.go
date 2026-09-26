@@ -216,3 +216,68 @@ func TestBareAddressStaysBare(t *testing.T) {
 func dumpOf(src string) string {
 	return doctree.Dump(docrst.Parse(src))
 }
+
+// TestWrittenMarkupReadsBackAtAWordBoundary pins reST's own boundary rule on
+// the WRITING side. Inline markup is only markup when its start-string is
+// preceded by whitespace or one of "-:/'\"<([{" and its end-string followed by
+// whitespace or one of "-.,:;!?\\/'\")]}>" (Inliner.start_string_prefix and
+// end_string_suffix).
+//
+// richdoc puts no whitespace of its own between inlines, so a document built
+// as [Text("See it"), Emph("em"), Text(".")] was written "See it*em*." and read
+// back as the LITERAL TEXT "See it*em*.". Four of the five inline kinds
+// degraded that way -- emphasis, strong, inline literal and footnote reference
+// -- and only a phrase reference survived. Nothing reported it: the output is
+// valid reST, it just no longer says what the input said.
+//
+// The fix is reST's own null separator, a backslash-escaped space, which
+// satisfies the boundary and renders nothing. The CONTROLS are the cases that
+// were already fine: content that ends in a space needs no separator, and one
+// must not appear there.
+func TestWrittenMarkupReadsBackAtAWordBoundary(t *testing.T) {
+	note := richdoc.Note(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("Body.")}})
+	cases := []struct {
+		name string
+		ins  []richdoc.Inline
+		tag  string
+	}{
+		{"emphasis after a word", []richdoc.Inline{richdoc.Txt("See it"), richdoc.Emph{Inlines: []richdoc.Inline{richdoc.Txt("em")}}, richdoc.Txt(".")}, "<emphasis>"},
+		{"strong after a word", []richdoc.Inline{richdoc.Txt("See it"), richdoc.Strong{Inlines: []richdoc.Inline{richdoc.Txt("st")}}, richdoc.Txt(".")}, "<strong>"},
+		{"inline literal after a word", []richdoc.Inline{richdoc.Txt("See it"), richdoc.Code{Value: "c"}, richdoc.Txt(".")}, "<literal>"},
+		{"a phrase reference after a word", []richdoc.Inline{richdoc.Txt("See it"), richdoc.Link{URL: "http://x/", Inlines: []richdoc.Inline{richdoc.Txt("L")}}, richdoc.Txt(".")}, "<reference"},
+		{"a footnote reference after a word", []richdoc.Inline{richdoc.Txt("See it"), note, richdoc.Txt(".")}, "<footnote_reference"},
+		{"markup followed by a word", []richdoc.Inline{richdoc.Emph{Inlines: []richdoc.Inline{richdoc.Txt("em")}}, richdoc.Txt("tail")}, "<emphasis>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := Write(richdoc.New().P(tc.ins...).Doc())
+			if err != nil {
+				t.Fatal(err)
+			}
+			dump := doctree.Dump(docrst.Parse(string(out)))
+			if !strings.Contains(dump, tc.tag) {
+				t.Errorf("what was written does not read back as %s:\nwritten: %q\n%s", tc.tag, out, dump)
+			}
+			// The separator must not become visible text.
+			if strings.Contains(dump, "\\") {
+				t.Errorf("a backslash reached the document:\n%s", dump)
+			}
+		})
+	}
+	t.Run("CONTROL: no separator where the boundary is already valid", func(t *testing.T) {
+		out, err := Write(richdoc.New().P(
+			richdoc.Txt("See it "),
+			richdoc.Emph{Inlines: []richdoc.Inline{richdoc.Txt("em")}},
+			richdoc.Txt("."),
+		).Doc())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(out), "\\ ") {
+			t.Errorf("inserted a separator where none was needed: %q", out)
+		}
+		if !strings.Contains(string(out), "See it *em*.") {
+			t.Errorf("got %q", out)
+		}
+	})
+}
