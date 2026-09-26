@@ -6,14 +6,73 @@ package rst
 import (
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/go-richdoc/richdoc"
 )
 
+// reST recognizes inline markup only at a BOUNDARY: a start-string must be
+// preceded by whitespace or one of these, and an end-string followed by
+// whitespace or one of the suffix set (Inliner.start_string_prefix and
+// end_string_suffix, docutils/rst's own port of them).
+const (
+	inlineStarters = "*`[|_"
+	validBeforeSet = "-:/'\"<([{‘“«¡¿"
+	validAfterSet  = "-.,:;!?\\/'\")]}>’”»"
+)
+
+func lastRune(s string) rune {
+	r := []rune(s)
+	if len(r) == 0 {
+		return 0
+	}
+	return r[len(r)-1]
+}
+
+func firstRune(s string) rune {
+	for _, r := range s {
+		return r
+	}
+	return 0
+}
+
+func okBefore(r rune) bool {
+	return r == 0 || unicode.IsSpace(r) || strings.ContainsRune(validBeforeSet, r)
+}
+
+func okAfter(r rune) bool {
+	return r == 0 || unicode.IsSpace(r) || strings.ContainsRune(validAfterSet, r)
+}
+
+// writeInlines joins the rendered inlines, inserting reST's NULL SEPARATOR
+// ("\ ", a backslash-escaped space, which renders nothing) wherever the join
+// would put markup where reST cannot see it.
+//
+// Without it, four of the five inline kinds silently stopped being markup when
+// they followed a word directly: richdoc's own
+// [Text("See it"), Emph("em"), Text(".")] was written "See it*em*." and read
+// back as the literal text "See it*em*." -- emphasis, strong, inline literal
+// and footnote reference all degraded, and only a phrase reference survived.
+// A converter's output that no longer says what its input said is the worst
+// kind of loss, because nothing reports it.
 func (w *writer) writeInlines(nodes []richdoc.Inline) string {
 	var b strings.Builder
+	prev := ""
 	for _, n := range nodes {
-		b.WriteString(w.writeInline(n))
+		s := w.writeInline(n)
+		if s == "" {
+			continue
+		}
+		if prev != "" {
+			startsMarkup := strings.ContainsRune(inlineStarters, firstRune(s))
+			endsMarkup := strings.ContainsRune(inlineStarters, lastRune(prev))
+			if (startsMarkup && !okBefore(lastRune(prev))) ||
+				(endsMarkup && !okAfter(firstRune(s))) {
+				b.WriteString("\\ ")
+			}
+		}
+		b.WriteString(s)
+		prev = s
 	}
 	return b.String()
 }
@@ -63,6 +122,15 @@ func (w *writer) writeInline(n richdoc.Inline) string {
 		}
 		return ""
 	case richdoc.Footnote:
+		// EXPLICITLY numbered ("[1]_"), not auto ("[#]_"), and that choice was
+		// MEASURED rather than reasoned. richdoc's Footnote carries no label,
+		// so an auto-numbered source ("[#]_", 53 corpus files) cannot be told
+		// from a manually numbered one and one spelling has to serve both.
+		// Writing the auto form fixes those 53 and costs more than it buys: a
+		// document whose labels are 1..N in order -- much the commoner shape --
+		// round-trips EXACTLY under the explicit form and becomes an auto
+		// reference under the other. Source-vs-output equivalence said so
+		// plainly: 935 with this, 865 with "[#]_".
 		w.footnotes = append(w.footnotes, v)
 		return "[" + strconv.Itoa(len(w.footnotes)) + "]_"
 	case richdoc.Anchor:
