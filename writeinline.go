@@ -86,7 +86,18 @@ func (w *writer) writeInlines(nodes []richdoc.Inline) string {
 func (w *writer) writeInline(n richdoc.Inline) string {
 	switch v := n.(type) {
 	case richdoc.Text:
-		return escapeText(v.Value)
+		// A newline inside a text node is reST's SOFT WRAP -- docutils keeps the
+		// source's line breaks in the node, and this reader passes them through
+		// -- so writing one back verbatim carries whatever indentation followed
+		// it. PEP 262 wraps a paragraph with an escaped continuation
+		// ("...around 28\n\   Dec 1999)"), and re-emitting that newline plus its
+		// four spaces turned the paragraph into a DEFINITION LIST: the first
+		// line became a term and the rest its definition.
+		//
+		// Collapsing the break to a single space is what reST means by it. A
+		// HARD break is richdoc.LineBreak, a different node, so this cannot eat
+		// one.
+		return escapeText(collapseSoftWrap(v.Value))
 	case richdoc.Emph:
 		return "*" + w.writeInlines(v.Inlines) + "*"
 	case richdoc.Strong:

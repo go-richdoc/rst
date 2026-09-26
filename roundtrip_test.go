@@ -360,3 +360,62 @@ func TestParagraphTextIsNotReadAsABlock(t *testing.T) {
 		}
 	})
 }
+
+// TestEscapedContinuationStaysOneParagraph pins what a soft wrap inside a text
+// node may carry back out. docutils keeps the source's line breaks IN the text
+// node and this reader passes them through, so the writer re-emitted the break
+// together with whatever indentation followed it -- and a continuation deeper
+// than its own first line is a DEFINITION LIST, not a paragraph.
+//
+// PEP 262 is the witness. It wraps a paragraph with reST's escaped
+// continuation:
+//
+//	[1] Michael Muller's patch (posted to the Distutils-SIG around 28
+//	\   Dec 1999) generates a list of installed files.
+//
+// which is one paragraph. Written back with the newline and its four spaces, it
+// came out as a term ("[1] Michael Muller's patch ... around 28") plus its
+// definition -- a different document, in valid reST. 15 of the 1564 corpus
+// files.
+//
+// The INDENTATION is removed and the break is KEPT: the break is harmless (reST
+// folds it to a space) and keeping it preserves the author's layout, which the
+// surrounding indentBlock then re-indents uniformly. Collapsing it to a space
+// instead reflowed every reconstructed body onto one line, which two existing
+// tests caught -- they are the controls here.
+func TestEscapedContinuationStaysOneParagraph(t *testing.T) {
+	t.Run("an escaped continuation does not become a definition list", func(t *testing.T) {
+		src := "References\n==========\n\n[1] Michael Muller's patch (posted to the Distutils-SIG around 28\n\\   Dec 1999) generates a list of installed files.\n"
+		d, err := Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := Write(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dump := doctree.Dump(docrst.Parse(string(out)))
+		if strings.Contains(dump, "<definition_list") {
+			t.Errorf("the paragraph came back as a definition list:\nwritten: %q\n%s", out, dump)
+		}
+		if !strings.Contains(dump, "<paragraph>") {
+			t.Errorf("no paragraph at all:\n%s", dump)
+		}
+	})
+	t.Run("CONTROL: a reconstructed body keeps its line breaks", func(t *testing.T) {
+		// Collapsing the break to a space reflows this onto one line. The
+		// reconstruction is not wrong either way, but the layout is the
+		// author's and there is no reason to spend it.
+		d, err := Parse([]byte(".. topic:: T\n\n   one line\n   and another\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, ok := d.Blocks[0].(richdoc.RawBlock)
+		if !ok {
+			t.Fatalf("want a RawBlock, got %T", d.Blocks[0])
+		}
+		if !strings.Contains(raw.Text, "one line\n") {
+			t.Errorf("the line break was spent: %q", raw.Text)
+		}
+	})
+}

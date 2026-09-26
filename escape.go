@@ -111,3 +111,35 @@ func escapeBlockStart(text string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// collapseSoftWrap removes the INDENTATION that follows a newline inside a text
+// node, and keeps the newline.
+//
+// It is the indentation that does the damage: a continuation deeper than its own
+// first line is a definition or a block quote, so PEP 262's escaped wrap
+// ("...around 28\n\   Dec 1999)") came back as a DEFINITION LIST. The line break
+// itself is harmless -- reST folds it back to a space -- and keeping it keeps the
+// author's layout, which is also what the surrounding indentBlock expects to
+// re-indent uniformly. Collapsing the break to a space instead reflowed every
+// reconstructed body onto one line, which two existing tests caught at once.
+func collapseSoftWrap(s string) string {
+	if !strings.ContainsAny(s, "\n\r") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	afterBreak := false
+	for _, r := range s {
+		switch {
+		case r == '\n' || r == '\r':
+			afterBreak = true
+			b.WriteRune(r)
+		case afterBreak && (r == ' ' || r == '\t'):
+			// the indentation that followed the break: dropped
+		default:
+			afterBreak = false
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
