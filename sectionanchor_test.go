@@ -439,13 +439,18 @@ func TestDiagnosticInsideAnAdmonition(t *testing.T) {
 // sentence like `Duplicate explicit target name: "versionadded".` sitting
 // in the prose as if an author had written it.
 func TestDiagnosticsNeverLeakIntoARawBlock(t *testing.T) {
-	const src = "term\n" +
-		"  - **a** (bool): first.\n" +
-		"    Defaults to ``True``.\n\n" +
-		"    .. versionadded:: 3.1\n\n" +
-		"  - **b** (bool): second.\n" +
-		"    Defaults to ``False``.\n\n" +
-		"    .. versionadded:: 3.1\n"
+	// The fixture this case used to carry was two ".. versionadded:: 3.1"
+	// directives in one document, whose "Duplicate explicit target name"
+	// notice was FABRICATED: docutils/rst read a <directive> placeholder's
+	// own name as a claim on a target name, so two identical unimplemented
+	// directives collided with each other. v0.136.12 fixed that, the message
+	// vanished, and this test's own CONTROL said so -- it is the reason the
+	// fixture changed rather than the assertion.
+	//
+	// What replaced it raises the SAME diagnostic for real: two explicit
+	// targets claiming one name inside a ".. note::", which is the shape
+	// that surfaced the leak in the first place.
+	const src = ".. note::\n\n   .. _dup: http://a/\n\n   .. _dup: http://b/\n"
 
 	doc, err := Parse([]byte(src))
 	if err != nil {
@@ -594,6 +599,48 @@ func TestOnlyARefusedConstructKeepsItsQuotedSource(t *testing.T) {
 			if !found {
 				t.Errorf("Parse(%q) lost the refused source %q entirely: %+v", tc.src, tc.want, d.Blocks)
 			}
+		}
+	})
+}
+
+// TestDeprecatedDirectiveSurvivesASectionOfTheSameName is the downstream
+// witness for docutils/rst v0.136.12. An unimplemented directive becomes a
+// <directive> node here (this package turns ReportUnknownDirectives off), and
+// that node's "name" attribute was being read as a claim on a target name --
+// so ".. deprecated:: 9.1" in a document with a "Deprecated" section lost its
+// own name, and the reconstruction wrote ".. :: 9.1", which reads back as a
+// COMMENT. The construct went invisible, in 53 of the 1564 real-world corpus
+// files.
+//
+// The control is the same document without the colliding name, which was
+// always right: this must not become "never reconstruct a directive name".
+func TestDeprecatedDirectiveSurvivesASectionOfTheSameName(t *testing.T) {
+	const src = ".. deprecated:: 9.1\n\n.. _deprecated:\n\nHeading\n~~~~~~~\n\nbody\n"
+	d, err := Parse([]byte(src))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, ok := d.Blocks[0].(richdoc.RawBlock)
+	if !ok {
+		t.Fatalf("want the directive as a RawBlock, got %T", d.Blocks[0])
+	}
+	if !strings.Contains(raw.Text, ".. deprecated:: 9.1") {
+		t.Errorf("the directive lost its own name: %q", raw.Text)
+	}
+	out, err := Write(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), ".. :: ") {
+		t.Errorf("wrote a nameless directive, which reads back as a comment:\n%s", out)
+	}
+	t.Run("CONTROL: no colliding name", func(t *testing.T) {
+		d, err := Parse([]byte(".. deprecated:: 9.1\n\nHeading\n~~~~~~~\n\nbody\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw, ok := d.Blocks[0].(richdoc.RawBlock); !ok || !strings.Contains(raw.Text, ".. deprecated:: 9.1") {
+			t.Errorf("the uncollided case regressed: %+v", d.Blocks[0])
 		}
 	})
 }
