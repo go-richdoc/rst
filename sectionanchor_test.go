@@ -535,3 +535,65 @@ func TestCSVTableWithADelimiterBecomesATable(t *testing.T) {
 		t.Errorf("want two body rows, got %d: %#v", len(table.Rows), table.Rows)
 	}
 }
+
+// TestOnlyARefusedConstructKeepsItsQuotedSource pins WHICH diagnostics keep
+// the source docutils quotes inside them. Dropping a message must not drop
+// the author's text with it -- a malformed table survives only as the
+// <literal_block> inside its own ERROR -- but a WARNING quotes something
+// docutils BUILT anyway, so keeping that copy put the same text in the
+// document twice: once as the heading, once as a literal block nobody
+// wrote.
+//
+// The level is the line between them: docutils refuses at ERROR and above
+// and keeps the construct at WARNING and below. Every
+// literal_block-carrying message was checked against the reference, not
+// inferred from the two that showed the defect.
+func TestOnlyARefusedConstructKeepsItsQuotedSource(t *testing.T) {
+	t.Run("a WARNING's quote is not content", func(t *testing.T) {
+		for _, src := range []string{
+			"A long title\n====\n\nbody\n",       // Title underline too short.
+			"====\nA long title\n====\n\nbody\n", // Title overline too short.
+		} {
+			d, err := Parse([]byte(src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(d.Blocks) != 2 {
+				t.Errorf("Parse(%q) = %d blocks, want the heading and the body only: %+v", src, len(d.Blocks), d.Blocks)
+			}
+			for _, b := range d.Blocks {
+				if cb, ok := b.(richdoc.CodeBlock); ok {
+					t.Errorf("Parse(%q) fabricated a literal block: %q", src, cb.Text)
+				}
+			}
+			if _, ok := d.Blocks[0].(richdoc.Heading); !ok {
+				t.Errorf("Parse(%q): the heading itself is gone: %T", src, d.Blocks[0])
+			}
+		}
+	})
+	t.Run("CONTROL: an ERROR's quote IS the only copy of the text", func(t *testing.T) {
+		for _, tc := range []struct{ src, want string }{
+			{"======  ======\na       b\n\nbody\n", "a       b"}, // malformed table
+			{".. nosuch:: x\n\nbody\n", ".. nosuch:: x"},         // unknown directive
+			{".. note::\n\nbody\n", ".. note::"},                 // no content
+			{"====\n====\n====\n\nbody\n", "===="},               // invalid marker
+		} {
+			d, err := Parse([]byte(tc.src))
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, b := range d.Blocks {
+				switch v := b.(type) {
+				case richdoc.CodeBlock:
+					found = found || strings.Contains(v.Text, tc.want)
+				case richdoc.RawBlock:
+					found = found || strings.Contains(v.Text, tc.want)
+				}
+			}
+			if !found {
+				t.Errorf("Parse(%q) lost the refused source %q entirely: %+v", tc.src, tc.want, d.Blocks)
+			}
+		}
+	})
+}

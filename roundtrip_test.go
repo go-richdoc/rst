@@ -5,7 +5,10 @@ package rst
 
 import (
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/go-richdoc/richdoc"
 )
 
 // corpus holds representative reST documents exercising every block and
@@ -94,6 +97,67 @@ func TestRoundTripStableOutput(t *testing.T) {
 			out2, _ := Write(d2)
 			if string(out1) != string(out2) {
 				t.Errorf("writer not idempotent\n--- out1 ---\n%s\n--- out2 ---\n%s", out1, out2)
+			}
+		})
+	}
+}
+
+// TestHeadingKeepsItsInlineMarkup pins what a heading is written as. The
+// writer used the PLAIN text of a heading's inlines, on the reasoning that
+// a title underline must match the title's visible width -- so every
+// emphasis, inline literal, role and reference inside a heading was silently
+// dropped on the way out, and the round trip was STABLE afterwards, which
+// is why no output-comparing check ever saw it.
+//
+// docutils only warns when an underline is SHORTER than its title line
+// ("column_width(title) > len(underline)", states.py); a longer one is
+// legal. So underlining the rendered line costs nothing.
+//
+// Measured by comparing round-tripped TREES over the 1564-file real-world
+// corpus (/Users/Shared/rstcorpus/rtprobe): 398 files did not come back as
+// themselves, and this was 188 of them.
+func TestHeadingKeepsItsInlineMarkup(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+		markup string // must appear in the WRITTEN source, not just reparse
+	}{
+		{"an inline literal in a heading", "``build.py`` tools\n==================\n\nbody\n", "``build.py``"},
+		{"emphasis in a heading", "Why *not* a keyword\n===================\n\nbody\n", "*not*"},
+		{"strong plus text", "About **PEP 8** here\n====================\n\nbody\n", "**PEP 8**"},
+		{"a role in a heading", "The :emphasis:`x` role\n======================\n\nbody\n", "*x*"},
+		{"an embedded-URI reference in a heading", "see `the docs <http://example.com/>`__ now\n=========================================\n\nbody\n", "<http://example.com/>"},
+		{"markup in a NESTED heading", "Top\n===\n\nbody\n\nSub with ``code``\n-----------------\n\nmore\n", "``code``"},
+		{"CONTROL: a plain heading is untouched", "Plain Title\n===========\n\nbody\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d1, err := Parse([]byte(tc.source))
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Write(d1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			d2, err := Parse(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(d1, d2) {
+				t.Errorf("the tree did not come back as itself.\nwritten: %q\nbefore: %+v\nafter:  %+v", out, d1.Blocks, d2.Blocks)
+			}
+			// And the loss this is about: the markup must be IN the
+			// output. A tree comparison alone would pass on a writer that
+			// flattened BOTH ways consistently, which is precisely the
+			// failure mode here -- write-twice was stable all along.
+			if tc.markup != "" && !strings.Contains(string(out), tc.markup) {
+				t.Errorf("the heading lost %q on the way out: %q", tc.markup, out)
+			}
+			// The underline must still be long enough, or the reparse
+			// reports "Title underline too short." instead of a heading.
+			if _, ok := d2.Blocks[0].(richdoc.Heading); !ok {
+				t.Errorf("what came back is not a heading: %T", d2.Blocks[0])
 			}
 		})
 	}

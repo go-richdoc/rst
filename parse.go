@@ -689,6 +689,22 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// commentary. Without this the table vanished from the
 		// converted document entirely, which is worse than the
 		// diagnostic paragraph this default exists to remove.
+		//
+		// But only where the construct was REFUSED. A warning quotes the
+		// source of something docutils built anyway -- "Title underline too
+		// short." keeps its section AND quotes the two lines -- so keeping
+		// the quote there put the same text in the document twice, once as
+		// the heading and once as a literal block nobody wrote. The level
+		// is what separates the two: docutils refuses at ERROR and above
+		// (malformed table, unknown directive, invalid marker, missing or
+		// mismatched underline, incomplete title, a directive with no
+		// content) and keeps the construct at WARNING and below (both
+		// "too short" adornment cases). Checked against every
+		// literal_block-carrying message in the reference rather than
+		// inferred from the two that showed it.
+		if lvl := el.Attr("level"); lvl != "" && lvl < "3" {
+			return nil
+		}
 		var kept []doctree.Node
 		for _, ch := range el.Children {
 			if e, ok := ch.(*doctree.Element); ok && e.Tag == doctree.TagLiteralBlock {
