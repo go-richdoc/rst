@@ -281,3 +281,82 @@ func TestWrittenMarkupReadsBackAtAWordBoundary(t *testing.T) {
 		}
 	})
 }
+
+// TestParagraphTextIsNotReadAsABlock pins the POSITIONAL half of escaping.
+// escapeText handles the inline markers wherever they appear; a paragraph's
+// own FIRST characters decide whether reST reads it as a paragraph at all, and
+// that half had exactly one case ("|", which escapeText covers by accident)
+// out of nine.
+//
+// So a paragraph reading "B. Smith wrote this" came back as an enumerated
+// list, "- Not a bullet either" as a bullet list, ":not: a field" as a field
+// list, and ".. not a directive" as a COMMENT -- invisible in every rendering.
+// The output parsed cleanly every time, so nothing reported any of it.
+//
+// The corpus barely moves (+1 file): prose that begins with a block marker is
+// rare in the PEPs and sphinx docs. The witness is this test, not the count --
+// which is worth saying, because a fix whose corpus delta is 1 can look
+// unnecessary next to one worth 237.
+func TestParagraphTextIsNotReadAsABlock(t *testing.T) {
+	texts := []string{
+		"B. Smith wrote this",
+		"1. Not a list, a sentence",
+		"- Not a bullet either",
+		".. not a directive",
+		"| not a line block",
+		":not: a field",
+		"A. Einstein said so",
+		"i. roman not a list",
+		"--- not a transition",
+		">>> not a doctest",
+		"+--+ not a table",
+		"=== === not a table",
+		"(1) parenthesised not a list",
+		"Plain text is fine",     // CONTROL: nothing to escape
+		"i.e. not an enumerator", // CONTROL: the period is not followed by space
+		"3.14 is a number",       // CONTROL: same
+	}
+	for _, tx := range texts {
+		t.Run(tx, func(t *testing.T) {
+			out, err := Write(richdoc.New().P(richdoc.Txt(tx)).Doc())
+			if err != nil {
+				t.Fatal(err)
+			}
+			dump := doctree.Dump(docrst.Parse(string(out)))
+			for _, tag := range []string{"enumerated_list", "bullet_list", "comment", "line_block",
+				"field_list", "definition_list", "option_list", "doctest_block", "transition", "table"} {
+				if strings.Contains(dump, "<"+tag) {
+					t.Errorf("read back as <%s> instead of a paragraph:\nwritten: %q\n%s", tag, out, dump)
+				}
+			}
+			// And the text itself must be untouched: an escape that changed
+			// what the reader sees would be no better than the loss.
+			var got string
+			for _, l := range strings.Split(dump, "\n") {
+				lt := strings.TrimSpace(l)
+				if lt != "" && !strings.HasPrefix(lt, "<") {
+					got += lt
+				}
+			}
+			if got != tx {
+				t.Errorf("text changed: got %q, want %q (written %q)", got, tx, out)
+			}
+		})
+	}
+	t.Run("CONTROL: a continuation line is content, not a block start", func(t *testing.T) {
+		// Escaping every line, rather than the first, put a backslash INSIDE an
+		// inline literal that spanned two source lines. Four corpus files
+		// caught it; this keeps it caught.
+		d, err := Parse([]byte("text (via ``python\n-m zipapp``) more\n"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := Write(d)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(out), `\-m`) {
+			t.Errorf("escaped inside a literal: %q", out)
+		}
+	})
+}

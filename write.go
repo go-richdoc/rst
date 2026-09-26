@@ -109,7 +109,14 @@ func (w *writer) writeBlock(b richdoc.Block, level int) string {
 		if src, ok := writeImageBlock(n.Inlines); ok {
 			return src
 		}
-		return w.writeInlines(n.Inlines)
+		// escapeBlockStart, not just escapeText: a paragraph's own first
+		// characters decide whether reST reads it as a paragraph at all.
+		// "B. Smith wrote this" came back as an enumerated list and
+		// ".. not a directive" as a comment. Applied to the rendered text
+		// rather than at the marker sites, so a paragraph that is a list
+		// item's own first block is covered too -- "- " prepended to text
+		// that itself starts with "-" is a NESTED bullet list.
+		return escapeBlockStart(w.writeInlines(n.Inlines))
 	case richdoc.List:
 		return w.writeList(n)
 	case richdoc.CodeBlock:
