@@ -12,8 +12,8 @@ github.com/go-crdt/collab v0.37.0 h1:tLtDqao5GODY2pxE/wcEA8U9I/rPdN4LvjEPeE4/QwA
 github.com/go-crdt/collab v0.37.0/go.mod h1:kxTeZDZ6p8wC9gEkf2iWgFg2870lYliHJyCC6vDlsAs=
 github.com/go-crdt/crdt v0.39.0 h1:DJimBDQqmdqKVCAiU4k1aCWPgXeZ+id/FbO09DklTBw=
 github.com/go-crdt/crdt v0.39.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
-github.com/go-docutils/docutils v0.136.9 h1:8lXXUM28CACXAvU+lLPtrG8/pN8OsUw2esZaaUOAVsY=
-github.com/go-docutils/docutils v0.136.9/go.mod h1:HuaoJ4l8061JVxj8IxKWAooCTUEa7agwK+0epTlzApw=
+github.com/go-docutils/docutils v0.136.10 h1:N1TNfzHbter3kuIqIbJsEBjD5xDbjbQAhHAoUNIV0kU=
+github.com/go-docutils/docutils v0.136.10/go.mod h1:HuaoJ4l8061JVxj8IxKWAooCTUEa7agwK+0epTlzApw=
 github.com/go-gfx/gfx v0.19.0 h1:nA2Eg8Aq2kytR5Hrm/eQ6618w4vT0+Ao8BMZiuYh84c=
 github.com/go-gfx/gfx v0.19.0/go.mod h1:VAK6hgCgkhT3j3ek2K7G8zDfkCPD3RCF45UbcRlCV8Q=
 github.com/go-icons/iconoir v0.2.0 h1:I5AnDEIPgYfawTmwzemDRJjlYCUbFHuS8GJXrjADhXc=
