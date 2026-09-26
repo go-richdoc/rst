@@ -95,11 +95,24 @@ func writeAnchor(a richdoc.Anchor) string {
 
 func writeLink(l richdoc.Link) string {
 	if len(l.Inlines) == 1 {
-		if t, ok := l.Inlines[0].(richdoc.Text); ok && t.Value == l.URL {
+		if t, ok := l.Inlines[0].(richdoc.Text); ok {
 			// A bare URL round-trips through this package's own
 			// standalone-URI auto-recognition without any embedded-link
 			// markup at all.
-			return l.URL
+			if t.Value == l.URL {
+				return l.URL
+			}
+			// And so does a bare EMAIL address, which is the same
+			// construct one layer down: docutils recognizes it standalone
+			// and gives the reference a "mailto:" URI the source never
+			// wrote. Only the URL form differed, so this fell through to
+			// the explicit spelling and every plain address in a document
+			// came back as "`a@b <mailto:a@b>`__" -- the biggest single
+			// difference between the doctree of a source and the doctree of
+			// its own round trip, measured over the 1564-file corpus.
+			if l.URL == "mailto:"+t.Value {
+				return t.Value
+			}
 		}
 	}
 	// ANONYMOUS ("`__"), not named ("`_"). docutils' Inliner.phrase_ref
