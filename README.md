@@ -117,8 +117,26 @@ paragraphs, or with a list inside it, comes back with them. Until
 v0.113.0 all four joined each child block's text with a single space, so
 two paragraphs became one sentence and a list became a run-on — the same
 flattening removed from five other places in v0.99.0 and left in these.
-Inline STYLING inside such a body is still lost; rendering it would need
-a second full inline-to-reST emitter just for this fallback path.
+Inline STYLING is no longer lost where docutils parses it, and the reason
+this note used to give for losing it — "it would need a second full
+inline-to-reST emitter just for this fallback path" — was the obstacle that
+did not exist: the emitter already exists on the WRITING side, and
+`inlineSourceOf` reuses it by converting a node's children to richdoc inlines
+and writing those. One spelling of the inline grammar, used in both
+directions. A definition term `**Read the Docs**` used to come back as plain
+`Read the Docs`; the same was true of a term's classifier, an admonition
+title, a topic title, a sidebar subtitle, a rubric argument, a line block's
+line and a non-leading field name. 78 of the 1564 real-world corpus files
+change. Only the SOURCE-vS-OUTPUT judge can see this class, since the
+flattened text is already in the first tree and a round-trip comparison
+reproduces it.
+
+Two containers deliberately stay verbatim, because docutils does not parse
+them for markup either: an option-list flag and a comment. And one boundary
+remains by construction: a LEADING field list becomes `Document.Meta`, a
+`map[string]string` with nowhere to put markup. The block-level CONTENT of
+these fallbacks is still flattened per child block, which is a different
+question from the inline one.
 
 ### Write (richdoc → reST)
 

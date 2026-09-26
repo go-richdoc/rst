@@ -52,6 +52,37 @@ func rawComment(el *doctree.Element) string {
 //
 // Content, in contrast, is separated from whatever precedes it by one
 // blank line, which is why this cannot be a single join.
+// inlineSourceOf renders a node's INLINE children back to reST source, by
+// converting them to richdoc inlines and writing them with this package's own
+// inline writer. One spelling of the inline grammar, used in both directions.
+//
+// The reading side used doctree.AsText, which returns a node's TEXT: every
+// emphasis, inline literal, role and reference inside a construct that gets
+// reconstructed was dropped, so a definition term "**Read the Docs**" came
+// back as plain "Read the Docs" and the document quietly changed. Measured by
+// comparing the doctree of a source with the doctree of its own round trip
+// (/Users/Shared/rstcorpus/fidprobe), which is the only judge that can see it:
+// the flattened text is already in the first tree, so a round-trip comparison
+// reproduces it and calls it stable.
+//
+// The converter and writer here are THROWAWAY, and for this purpose that is
+// not a shortcut but the right thing: a substitution reference inside a term
+// must come back out as "|name|", the source form, not as the expansion the
+// real converter resolves it to. What it does cost is a footnote inside one of
+// these constructs, which keeps its marker and loses its body -- the real
+// writer is what emits footnote definitions. No corpus document has one.
+func inlineSourceOf(el *doctree.Element) string {
+	c := &converter{
+		footnoteDefs:  map[string]*doctree.Element{},
+		substDefs:     map[string]*doctree.Element{},
+		referenced:    map[string]bool{},
+		consumed:      map[string]bool{},
+		headingAnchor: map[string]string{},
+		anchorAlias:   map[string]string{},
+	}
+	return (&writer{}).writeInlines(c.convertInlines(el.Children))
+}
+
 func rawDirectiveSource(header string, options []string, content string) string {
 	switch {
 	case len(options) == 0 && content == "":
@@ -97,7 +128,7 @@ func rawAdmonition(el *doctree.Element) string {
 	var bodyLines []string
 	for _, c := range el.Children {
 		if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagTitle {
-			header += " " + doctree.AsText(ce)
+			header += " " + inlineSourceOf(ce)
 			break
 		}
 	}
@@ -126,7 +157,8 @@ func rawAdmonition(el *doctree.Element) string {
 // REQUIRED and a sidebar's is optional but may carry its own
 // ":subtitle:" (only ever present alongside a title, per
 // runTopicOrSidebar's own validation, so no empty-title case to guard
-// here). Content is flattened the same lossy way rawAdmonition does.
+// here). Its title and subtitle keep their inline markup (inlineSourceOf);
+// the CONTENT is still flattened the way rawAdmonition's is.
 func rawTopic(el *doctree.Element) string {
 	header := ".. " + el.Tag + "::"
 	var subtitle string
@@ -137,9 +169,9 @@ func rawTopic(el *doctree.Element) string {
 		}
 		switch ce.Tag {
 		case doctree.TagTitle:
-			header += " " + doctree.AsText(ce)
+			header += " " + inlineSourceOf(ce)
 		case doctree.TagSubtitle:
-			subtitle = doctree.AsText(ce)
+			subtitle = inlineSourceOf(ce)
 		}
 	}
 	var bodyLines []string
@@ -222,7 +254,7 @@ func rawContainer(el *doctree.Element) string {
 // children (v0.45.0 also added those) — inline styling within the
 // rubric's own text is lost, its actual text content isn't.
 func rawRubric(el *doctree.Element) string {
-	header := ".. rubric:: " + doctree.AsText(el)
+	header := ".. rubric:: " + inlineSourceOf(el)
 	var bodyLines []string
 	if class := el.Attr("class"); class != "" {
 		bodyLines = append(bodyLines, ":class: "+class)
@@ -465,7 +497,7 @@ func rawFieldList(el *doctree.Element) string {
 			}
 			switch fe.Tag {
 			case doctree.TagFieldName:
-				name = doctree.AsText(fe)
+				name = inlineSourceOf(fe)
 			case doctree.TagFieldBody:
 				body = rawBlockBody(fe)
 			}
@@ -499,9 +531,9 @@ func rawDefinitionList(el *doctree.Element) string {
 			}
 			switch ie.Tag {
 			case doctree.TagTerm:
-				term = doctree.AsText(ie)
+				term = inlineSourceOf(ie)
 			case doctree.TagClassifier:
-				term += " : " + doctree.AsText(ie)
+				term += " : " + inlineSourceOf(ie)
 			case doctree.TagDefinition:
 				def = rawBlockBody(ie)
 			}
@@ -605,7 +637,7 @@ func rawLineBlockLines(el *doctree.Element, depth int) []string {
 		}
 		switch ce.Tag {
 		case doctree.TagLine:
-			lines = append(lines, "| "+strings.Repeat("  ", depth)+strings.TrimSpace(doctree.AsText(ce)))
+			lines = append(lines, "| "+strings.Repeat("  ", depth)+strings.TrimSpace(inlineSourceOf(ce)))
 		case doctree.TagLineBlock:
 			lines = append(lines, rawLineBlockLines(ce, depth+1)...)
 		}
