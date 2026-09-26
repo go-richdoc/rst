@@ -227,6 +227,47 @@ covering each one, using `docutils/rst.Parse` itself as the check — see
 constructs are covered separately in `unit_test.go` instead, since by design
 they resynthesize reST rather than preserve a byte-exact slice.
 
+### What a trip through richdoc cannot preserve
+
+Two measurements over the 1564-file real-world corpus in
+`/Users/Shared/rstcorpus`, both outside this package:
+
+| measure | what it asks | state |
+|---|---|---|
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1374 of 1564 |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1310 of 1564 equivalent once the boundaries below are removed |
+
+`fidprobe` is the stricter and the more useful of the two: it sits outside both
+steps, so it sees a loss that happens on the way IN — which a round trip
+structurally cannot, because the damage is already in the tree it starts from.
+
+What the remaining difference is made of, established case by case rather than
+assumed. Each of these is a limit of `richdoc`'s own model, not a defect here,
+and each is checked NARROWLY in the probe so a real loss cannot hide behind it:
+
+- **a footnote or citation LABEL.** `richdoc.Footnote` is a body placed at its
+  reference and has no label field, so `[Aho86]_` comes back `[1]_` and a
+  citation comes back as a footnote. The explicit spelling is used rather than
+  auto (`[#]_`) because that was measured: 948 against 865.
+- **an enumerated list's STYLE.** `Ordered` and `Start` are recorded; the
+  enumerator's kind and punctuation are not, so `a)` comes back `1.`.
+- **a table's column WIDTHS.** The writer lays the table out itself, so every
+  column returns two wider. The column count is preserved.
+- **a `:class:`** on a paragraph, an image or anything else: no richdoc node has
+  one.
+- **`:number-lines:`** on a code block: no flag for it. The generated numbers are
+  dropped rather than folded into the code, which is the part that matters.
+- **a `.. code::` with no language**, which is `CodeBlock{Language: ""}` exactly
+  like a plain `::` block.
+- **a title reference** (`` `text` ``, the default role), which maps to
+  `Emph` — what docutils renders it as, and the only inline richdoc has for it.
+- **a target's NAME**, where the target is resolved into its references and
+  dropped: an anonymous or named target becomes an embedded URI. The probe
+  verifies the uri against the source's own target rather than tolerating any.
+- **a `<problematic>`'s markup**: the text of a construct docutils refused
+  passes through as text, so other writers render something rather than dropping
+  a `RawInline` they do not know.
+
 ## Testing
 
 `go test ./...`. `go vet ./...` and `gofmt -l .` are clean; CI enforces a
