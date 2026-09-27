@@ -75,14 +75,20 @@ func TestSectionAnchor(t *testing.T) {
 			},
 		},
 		{
-			// CONTROL: a label that is not immediately before a section
-			// has no heading to attach to. richdoc has no id on any
-			// other block, so this is still dropped — stated here so
-			// that the day a Paragraph grows one, the case is already
-			// written down.
-			"a label in front of a paragraph is still dropped",
+			// A label whose next node is not a section has no heading to
+			// attach to, richdoc giving no other Block an ID. It used to be
+			// DROPPED for that reason, and this case pinned the drop — with a
+			// note to revisit it "the day a Paragraph grows one". It did not
+			// need that day: an id on the Paragraph is one way to keep the
+			// anchor, and writing the target back as its own reST source is
+			// another, which needs nothing new in the model. The reference
+			// propagates the target here too (the paragraph comes out
+			// `ids="standalone" names="standalone"`), and dropping it left a
+			// "#standalone" reference pointing at nothing.
+			"a label in front of a paragraph is kept as its own source",
 			".. _my-anchor:\n\nSome paragraph.\n",
 			[]richdoc.Block{
+				richdoc.RawBlock{Format: "rst", Text: ".. _my-anchor:"},
 				richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Text{Value: "Some paragraph."}}},
 			},
 		},

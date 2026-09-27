@@ -288,6 +288,12 @@ type converter struct {
 	// targets -- to that one. See collectSectionAnchors.
 	headingAnchor map[string]string
 	anchorAlias   map[string]string
+	// anchorTaken holds the internal targets a HEADING has already taken
+	// responsibility for, so convertBlockElement can tell those from the ones
+	// whose next node is not a section -- which richdoc's model cannot attach
+	// an id to (no Block but Heading has one), and which are therefore kept as
+	// their own reST source instead of being dropped.
+	anchorTaken map[*doctree.Element]bool
 }
 
 // resolveConsumed decides, before any conversion, which definitions will
@@ -382,12 +388,20 @@ func (c *converter) collect(n doctree.Node) {
 // follows the Sphinx convention.
 func (c *converter) collectSectionAnchors(el *doctree.Element) {
 	var pending []*doctree.Element
-	for _, ch := range el.Children {
-		ce, ok := ch.(*doctree.Element)
-		if !ok {
-			pending = nil
-			continue
-		}
+	// DOCUMENT ORDER, not per-parent. The first version walked each parent's
+	// own children and paired a pending target with a section SIBLING, which
+	// misses the commonest shape there is: docutils' section nesting makes a
+	// target written between two same-level titles the LAST CHILD of the
+	// EARLIER section, so it never met the section it belongs to and was
+	// dropped. Asked about exactly that input, the reference answers
+	//
+	//	<section ids="plain-section plain" names="plain\ section plain">
+	//
+	// -- PropagateTargets finds "the next node" in document order and crosses
+	// the boundary. 59 of the 1564 real-world files round-tripped to a
+	// different heading id because of it, and behind each of those was a
+	// "#plain" reference pointing at an id nothing in the tree carried.
+	for _, ce := range elementsInDocumentOrder(el) {
 		switch {
 		case isInternalTarget(ce):
 			pending = append(pending, ce)
@@ -396,6 +410,29 @@ func (c *converter) collectSectionAnchors(el *doctree.Element) {
 			// PropagateTargets steps over these explicitly, since a
 			// later transform may remove them.
 			continue
+		case ce.Tag == doctree.TagTarget && len(pending) > 0:
+			// A bare target CHAINED onto one that carries a reference is not
+			// an anchor in this document at all -- it is another name for that
+			// destination. Asked about
+			//
+			//	.. _pythondoc:
+			//	.. _gendoc: http://example.com/gendoc
+			//
+			// the reference answers
+			// `<reference name="pythondoc" refuri="http://example.com/gendoc">`:
+			// the name resolves to the URL, so the target is bookkeeping and
+			// dropping it loses nothing. Marking the group accounted-for is
+			// what keeps it out of the raw-block path -- without this,
+			// pep-0256's ".. _pythondoc:" was written out immediately before a
+			// section it never preceded in the source, and on the next parse it
+			// became that section's anchor. A round trip that is not
+			// idempotent, and the one file the set-diff showed getting worse.
+			if c.anchorTaken == nil {
+				c.anchorTaken = map[*doctree.Element]bool{}
+			}
+			for _, t := range pending {
+				c.anchorTaken[t] = true
+			}
 		case ce.Tag == doctree.TagSection && len(pending) > 0 && pending[0].Attr("id") != "":
 			chosen := pending[0].Attr("id")
 			if c.headingAnchor == nil {
@@ -411,10 +448,39 @@ func (c *converter) collectSectionAnchors(el *doctree.Element) {
 					c.anchorAlias[id] = chosen
 				}
 			}
+			// Every target in this group has now been accounted for by the
+			// heading, so nothing should write it again as a raw block.
+			if c.anchorTaken == nil {
+				c.anchorTaken = map[*doctree.Element]bool{}
+			}
+			for _, t := range pending {
+				c.anchorTaken[t] = true
+			}
 		}
 		pending = nil
-		c.collectSectionAnchors(ce)
 	}
+}
+
+// elementsInDocumentOrder yields el's descendants pre-order -- a container
+// before its own children -- which is the order PropagateTargets reads the
+// tree in. A <section> therefore appears immediately after whatever preceded
+// it, INCLUDING a target that the section nesting parked at the end of the
+// previous section.
+func elementsInDocumentOrder(el *doctree.Element) []*doctree.Element {
+	var out []*doctree.Element
+	var walk func(e *doctree.Element)
+	walk = func(e *doctree.Element) {
+		for _, ch := range e.Children {
+			ce, ok := ch.(*doctree.Element)
+			if !ok {
+				continue
+			}
+			out = append(out, ce)
+			walk(ce)
+		}
+	}
+	walk(el)
+	return out
 }
 
 // isInternalTarget reports whether el is the kind of target
@@ -716,11 +782,26 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		}
 		return c.convertBlocks(kept, level)
 	case doctree.TagTarget, doctree.TagSubstitutionDef:
-		// Invisible bookkeeping nodes: a hyperlink target's references
-		// already carry a resolved refuri directly (see the rst package's
-		// own resolveTargets), and a substitution definition's value is
-		// inlined at each reference by convertInlineNode. Neither has
-		// visible content of its own once that resolution has happened.
+		// A target carrying a refuri or a refname IS invisible bookkeeping:
+		// its references already arrived with the URI resolved into them (see
+		// the rst package's own resolveTargets), so dropping it loses nothing
+		// -- checked on all three shapes, including the anonymous ".. __: uri"
+		// whose reference comes out as "`x <uri>`__".
+		//
+		// An INTERNAL target is a different thing wearing the same tag: it
+		// names a place in THIS document, and nothing can resolve it away.
+		// docutils hands its ids and names to the next node (PropagateTargets),
+		// which for a section this package does through collectSectionAnchors
+		// -- but richdoc gives no other Block an ID, so a target whose next
+		// node is a paragraph, a list or a table has nowhere to go. Dropping it
+		// left a "#standalone" reference pointing at nothing. Kept here as its
+		// own reST source, which is what RawBlock is documented for
+		// ("round-trip fidelity for constructs the model does not represent
+		// natively") and what every other unrepresentable construct in this
+		// package already does.
+		if el.Tag == doctree.TagTarget && isInternalTarget(el) && !c.anchorTaken[el] {
+			return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: targetSource(el)}}
+		}
 		return nil
 	case doctree.TagFootnote, doctree.TagCitation:
 		// Emitted inline at each resolvable reference (convertInlineNode);
@@ -1218,4 +1299,38 @@ func codeLanguage(el *doctree.Element) string {
 		return ""
 	}
 	return classes[1]
+}
+
+// targetSource writes an internal hyperlink target back as reST.
+//
+// The quoting rule is the inverse of the reference parser's own pattern
+// (states.py, Body.explicit.patterns.target, read directly):
+//
+//	(?!_) (?P<quote>`?) (?![ `]) (?P<name>.+?) (?P=quote) (?<!:) :
+//
+// An unquoted name is ".+?" stopped by the colon that ends the marker, so a
+// name CONTAINING a colon has to be backquoted; so does one starting with an
+// underscore (which would read as the anonymous form), a space or a backquote.
+// Everything else is written bare, which is how the author almost always wrote
+// it.
+func targetSource(el *doctree.Element) string {
+	name := el.Attr("name")
+	if needsTargetQuotes(name) {
+		return ".. _`" + name + "`:"
+	}
+	return ".. _" + name + ":"
+}
+
+func needsTargetQuotes(name string) bool {
+	if name == "" {
+		return false
+	}
+	if strings.ContainsRune(name, ':') {
+		return true
+	}
+	switch name[0] {
+	case '_', ' ', '`':
+		return true
+	}
+	return false
 }
