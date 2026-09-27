@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-docutils/docutils/doctree"
+	docrst "github.com/go-docutils/docutils/rst"
 	"github.com/go-richdoc/richdoc"
 )
 
@@ -28,9 +30,39 @@ func TestPendingIsNotRawSourceContent(t *testing.T) {
 			t.Errorf("parser internals reached the output (%q):\n%s", leak, out)
 		}
 	}
-	if !strings.Contains(string(out), ".. topic:: Contents") {
-		t.Errorf("the topic itself was lost:\n%s", out)
+	// ".. contents::", not ".. topic::". The generic topic path skipped the
+	// pending correctly and so wrote a topic with a title and NO CONTENT, which
+	// docutils rejects ("Content block expected for the \"topic\" directive;
+	// none found.") -- one defect traded for another, which counting the
+	// diagnostics the reconstruction ADDS is what showed.
+	if !strings.Contains(string(out), ".. contents:: Contents") {
+		t.Errorf("the contents directive itself was lost:\n%s", out)
 	}
+	// And the reconstruction must not be something docutils complains about.
+	if n := countSystemMessages(t, out); n != 0 {
+		t.Errorf("the reconstruction gained %d diagnostic(s):\n%s", n, out)
+	}
+}
+
+// countSystemMessages reparses src and counts what docutils says about it.
+func countSystemMessages(t *testing.T, src []byte) int {
+	t.Helper()
+	var walk func(n doctree.Node) int
+	walk = func(n doctree.Node) int {
+		el, ok := n.(*doctree.Element)
+		if !ok {
+			return 0
+		}
+		c := 0
+		if el.Tag == doctree.TagSystemMessage {
+			c++
+		}
+		for _, ch := range el.Children {
+			c += walk(ch)
+		}
+		return c
+	}
+	return walk(docrst.Parse(string(src)))
 }
 
 // TestNestedStructureSurvivesRawSource covers the five raw* helpers that

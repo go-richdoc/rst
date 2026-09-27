@@ -160,6 +160,9 @@ func rawAdmonition(el *doctree.Element) string {
 // here). Its title and subtitle keep their inline markup (inlineSourceOf);
 // the CONTENT is still flattened the way rawAdmonition's is.
 func rawTopic(el *doctree.Element) string {
+	if src, ok := rawContents(el); ok {
+		return src
+	}
 	header := ".. " + el.Tag + "::"
 	var subtitle string
 	for _, c := range el.Children {
@@ -637,12 +640,41 @@ func rawLineBlockLines(el *doctree.Element, depth int) []string {
 		}
 		switch ce.Tag {
 		case doctree.TagLine:
-			lines = append(lines, "| "+strings.Repeat("  ", depth)+strings.TrimSpace(inlineSourceOf(ce)))
+			prefix := "| " + strings.Repeat("  ", depth)
+			lines = append(lines, prefix+continuationIndent(strings.TrimSpace(inlineSourceOf(ce)), len(prefix)))
 		case doctree.TagLineBlock:
 			lines = append(lines, rawLineBlockLines(ce, depth+1)...)
 		}
 	}
 	return lines
+}
+
+// continuationIndent indents every line of text after the first by width
+// spaces, so a line block LINE that wrapped in the source stays one line on
+// reparse.
+//
+// One <line> can span several source lines: docutils reads
+//
+//	| ``__setitem__(integer | slice, integer) ->
+//	  None``
+//
+// as a single line whose literal contains a newline -- confirmed against the
+// reference, which gives one <line> with one <literal> -- and it is the INDENT
+// that says so. Written at column 0 the line block simply ends there, which
+// cost PEP 368 twenty-one diagnostics in its reconstruction: three per wrapped
+// line, "Line block ends without a blank line" plus the unterminated literal
+// and emphasis the break left behind. None of them was visible to the
+// round-trip probe, whose answer for that file was already "no".
+func continuationIndent(text string, width int) string {
+	if !strings.Contains(text, "\n") {
+		return text
+	}
+	pad := strings.Repeat(" ", width)
+	lines := strings.Split(text, "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = pad + strings.TrimLeft(lines[i], " ")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // rawRole rebuilds ":role:`text`" from a role's parsed CONTENT, so the
@@ -901,6 +933,30 @@ func rawChildSource(n doctree.Node) string {
 		doctree.TagNote, doctree.TagTip, doctree.TagWarningAdmonition,
 		doctree.TagAdmonition:
 		return rawAdmonition(el)
+	// There is deliberately NO case for a topic or a sidebar here. docutils
+	// refuses one nested in a body element at all -- ".. topic:: X" inside a
+	// ".. container::" parses to `The "topic" directive may not be used within
+	// topics or body elements.` -- so the case was dead code, which is what the
+	// coverage floor caught after the corpus had nothing to say either way.
+	case doctree.TagComment:
+		// Without this the fallback returned the comment's TEXT, so a comment
+		// nested in a container or an admonition stopped being a comment:
+		// sphinx's own index page comments out a whole admonition
+		// (".. .. admonition:: 🌐 Integration with Version Control"), and the
+		// reconstruction wrote it back as a REAL directive with no body --
+		// "Content block expected for the \"admonition\" directive; none
+		// found." A commented-out construct came back switched on.
+		return rawComment(el)
+	case doctree.TagRubric:
+		return rawRubric(el)
+	case doctree.TagContainer:
+		return rawContainer(el)
+	case doctree.TagRaw:
+		// A raw block's content is markup for its own target format, and this
+		// is the directive that says so. The fallback emitted the content bare,
+		// which for "raw:: html" put tags into the reST as if the author had
+		// typed them.
+		return rawDirectiveSource(".. raw:: "+el.Attr("format"), nil, doctree.AsText(el))
 	}
 	return strings.TrimSpace(doctree.AsText(el))
 }
@@ -943,4 +999,84 @@ func rawChildren(el *doctree.Element) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// rawContents recognises the <topic> docutils builds for ".. contents::" and
+// writes that directive back, rather than the ".. topic::" the generic path
+// produced.
+//
+// The generic path skipped the <pending> child (correctly -- its text is
+// docutils' own ".. internal attributes:" block and must never reach a reader)
+// and so emitted a topic with a TITLE and NO CONTENT, which docutils rejects:
+// "Content block expected for the \"topic\" directive; none found." Four of the
+// five diagnostics the reconstruction still introduced were this one, in three
+// spellings -- the contentless topic, the same with no title at all ("1
+// argument(s) required, 0 supplied"), and an invented ":name:" option taken
+// from the implicit target the TITLE created, which ".. contents::" does not
+// even accept.
+//
+// The options come back out of the pending's own details, and only the ones
+// that can be read unambiguously. docutils' Contents.option_spec (read
+// directly) is backlinks/class/depth/local, and the tree distinguishes the two
+// spellings that both mean "no backlinks": ":backlinks: none" leaves
+// "backlinks: None" and a bare ":backlinks:" leaves "backlinks: ”". The
+// "contents" and "local" CLASSES are not written back, because docutils derives
+// them from the directive and from :local: itself -- writing them as an
+// explicit :class: would duplicate them on the next parse.
+func rawContents(el *doctree.Element) (string, bool) {
+	var details string
+	for _, c := range el.Children {
+		ce, ok := c.(*doctree.Element)
+		if !ok || ce.Tag != doctree.TagPending {
+			continue
+		}
+		t := doctree.AsText(ce)
+		if strings.Contains(t, "docutils.transforms.parts.Contents") {
+			details = t
+			break
+		}
+	}
+	if details == "" {
+		return "", false
+	}
+	header := ".. contents::"
+	for _, c := range el.Children {
+		if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagTitle {
+			header += " " + inlineSourceOf(ce)
+			break
+		}
+	}
+	var options []string
+	if v, ok := pendingDetail(details, "depth"); ok {
+		options = append(options, ":depth: "+v)
+	}
+	if v, ok := pendingDetail(details, "local"); ok && v == "None" {
+		options = append(options, ":local:")
+	}
+	if v, ok := pendingDetail(details, "backlinks"); ok {
+		switch v {
+		case "None":
+			options = append(options, ":backlinks: none")
+		case "''":
+			options = append(options, ":backlinks:")
+		default:
+			options = append(options, ":backlinks: "+strings.Trim(v, "'"))
+		}
+	}
+	// A directive with options and no content is legal for ".. contents::",
+	// whose content_spec takes none -- which is the whole point of writing this
+	// directive rather than a topic.
+	return rawDirectiveSource(header, options, ""), true
+}
+
+// pendingDetail reads one "  key: value" line out of a <pending>'s own
+// ".. internal attributes:" text.
+func pendingDetail(details, key string) (string, bool) {
+	for _, l := range strings.Split(details, "\n") {
+		l = strings.TrimSpace(l)
+		if v, ok := strings.CutPrefix(l, key+": "); ok {
+			return strings.TrimSpace(v), true
+		}
+	}
+	return "", false
 }
