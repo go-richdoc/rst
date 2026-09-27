@@ -235,6 +235,41 @@ PEP 495 typeset 15 pages, exit 0, six words short, with nothing anywhere saying
 so. A default that degrades rather than fails can only be measured through the
 strict path, and only the strict path is a witness.
 
+### Where the images are
+
+docutils v0.137.0 stopped dropping images — an `<image>` had no case in the
+latex writer's switch, so it rendered as nothing at all — and that turned a
+silent content loss into a question this package had no way to answer. The
+engine reads a figure with `os.ReadFile`, and its resolver seam
+(`Options.Resolve`) serves classes, packages and `\input` files, not figures, so
+a relative `\includegraphics` resolves against the PROCESS's working directory.
+For a document that arrived from somewhere else that is almost never right: the
+strict measure fell from 1553 to **1510**, and every one of the 43 new failures
+was `includegraphics …: no such file or directory`.
+
+`Options.BaseDir` closes it without touching the engine — each relative
+reference is rewritten to sit under the directory the caller names, before the
+source reaches the engine. With it, and with a placeholder written for every
+reference a local file COULD satisfy (the corpus ships `.rst` files, not their
+pictures), the chain is back to **1540 of 1564**, the same number the writer's
+own compile sweep reaches. The 24 that remain are each accounted for:
+
+| | |
+|---|---|
+| 13 | an image reference nothing local can satisfy — a remote URL, a `data:` URI, an absolute `/_static/…` path, or sphinx's own `image.*` language glob |
+| 8 | an empty source: nothing to put on a page |
+| 2 | the author's own `.. raw:: latex` with sphinx-only markup (`\sphinxsetup`, `\dimeval`) |
+| 1 | `&` alignment in a formula docutils itself also writes into `equation*` |
+
+Three kinds are deliberately left UNCHANGED by `BaseDir`: an absolute path (the
+caller already said where), and a `http(s)` or `data:` reference, which no local
+file can satisfy at any base. Rewriting those would turn "this cannot be
+fetched" into "the base is wrong" — a worse error, about the wrong thing.
+
+And the lenient default does here what it did for the control word: with no
+`BaseDir` and no `Strict`, an unresolvable image costs the reader the picture and
+reports nothing at all.
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
