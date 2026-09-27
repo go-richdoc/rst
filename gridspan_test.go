@@ -110,10 +110,17 @@ func TestWriteEmptyCellPadding(t *testing.T) {
 // TestParseNestedListInCellDoesNotConcatenateWords guards the second bug
 // this feature surfaced: a cell holding more than one top-level block (a
 // bullet list, here — richdoc.Cell can only hold inline content, so this
-// is always somewhat lossy, see cellInlines) must still separate those
-// blocks with a space. The very first version ran every word together
-// with no separator at all, since convertInlines has no concept of a block
-// boundary to insert one at.
+// is always somewhat lossy, see cellInlines) must still SEPARATE those
+// blocks. The very first version ran every word together with no separator
+// at all, since convertInlines has no concept of a block boundary to insert
+// one at.
+//
+// The separator is a blank line rather than a space, which is what this case
+// used to assert. Both are whitespace to any consumer, and neither restores
+// the block structure; the blank line is a FIXED POINT, where a space is not
+// (it re-parses as one text, so the cell came back different every time).
+// What must hold is that the words do not run together, so that is what is
+// checked -- the words with their separators collapsed.
 func TestParseNestedListInCellDoesNotConcatenateWords(t *testing.T) {
 	doc, err := Parse([]byte(gridSpanSource))
 	if err != nil {
@@ -121,17 +128,19 @@ func TestParseNestedListInCellDoesNotConcatenateWords(t *testing.T) {
 	}
 	tbl := doc.Blocks[0].(richdoc.Table)
 	cell := tbl.Rows[2][2] // the bulleted "Table cells / contain / body elements." cell
-	got := plainTextOf(cell.Inlines)
+	got := strings.Join(strings.Fields(plainTextOf(cell.Inlines)), " ")
 	want := "Table cells contain body elements."
 	if got != want {
 		t.Errorf("cell text = %q, want %q (words ran together with no separator)", got, want)
 	}
 }
 
-// TestParseMultiParagraphCellJoinsWithSpace covers cellInlines' other real
+// TestParseMultiParagraphCellKeepsTheBreak covers cellInlines' other real
 // case besides a bulleted cell: a cell holding more than one PARAGRAPH
-// (also valid grid-table content, not just lists).
-func TestParseMultiParagraphCellJoinsWithSpace(t *testing.T) {
+// (also valid grid-table content, not just lists). The break between them is
+// a blank line, which is both what reST spells it as and what survives a
+// re-parse unchanged.
+func TestParseMultiParagraphCellKeepsTheBreak(t *testing.T) {
 	src := "+-----+-------------+\n| a   | first para  |\n|     |             |\n|     | second para |\n+-----+-------------+\n"
 	doc, err := Parse([]byte(src))
 	if err != nil {
@@ -139,7 +148,7 @@ func TestParseMultiParagraphCellJoinsWithSpace(t *testing.T) {
 	}
 	tbl := doc.Blocks[0].(richdoc.Table)
 	got := plainTextOf(tbl.Rows[0][1].Inlines)
-	want := "first para second para"
+	want := "first para\n\nsecond para"
 	if got != want {
 		t.Errorf("multi-paragraph cell text = %q, want %q", got, want)
 	}

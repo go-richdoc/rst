@@ -89,10 +89,24 @@ func isAdornment(s string) bool {
 // verbatim content -- which four corpus files caught immediately.
 func escapeBlockStart(text string) string {
 	lines := strings.Split(text, "\n")
+	// The first line of each PARAGRAPH, not just of the text: a blank line
+	// starts a new block, so the line after one is at a block start again. For
+	// a paragraph (which holds no blank line) this is exactly the old
+	// line-0-only behaviour; it matters for a table CELL, whose two paragraphs
+	// are separated by a blank line since this writer started keeping the break
+	// (see cellInlines).
+	atBlockStart := true
 	for i, l := range lines {
-		if i > 0 {
-			break
+		if !atBlockStart {
+			if strings.TrimSpace(l) == "" {
+				atBlockStart = true
+			}
+			continue
 		}
+		if strings.TrimSpace(l) == "" {
+			continue
+		}
+		atBlockStart = false
 		trimmed := strings.TrimLeft(l, " ")
 		if trimmed == "" {
 			continue

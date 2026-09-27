@@ -980,7 +980,18 @@ func (c *converter) cellInlines(children []doctree.Node) []richdoc.Inline {
 	var out []richdoc.Inline
 	for i, p := range parts {
 		if i > 0 {
-			out = append(out, richdoc.Text{Value: " "})
+			// A BLANK LINE, not a space. Either way the block structure is
+			// gone -- richdoc.Cell has no Blocks -- and either way a consumer
+			// rendering to HTML sees whitespace, so nothing is lost by the
+			// change. What it buys is a FIXED POINT: a space between two texts
+			// re-parses as one text, so the cell came back with a different
+			// inline list every time and 19 of the 1564 real-world files could
+			// not round-trip for that reason alone. A blank line re-parses as
+			// two blocks again, and they are joined here the same way.
+			//
+			// It also puts the break back into the reconstructed reST, where a
+			// grid cell really can hold two paragraphs.
+			out = append(out, richdoc.Text{Value: "\n\n"})
 		}
 		out = append(out, p...)
 	}

@@ -431,16 +431,74 @@ func spannedCols(cells []richdoc.Cell) int {
 	return n
 }
 
-// flattenCellText collapses any newline in a cell's rendered text to a
-// space — a grid table row is exactly one source line in this writer's
-// output, so a literal "\n" (a multi-line cell's own wrapped content,
-// preserved verbatim inside its richdoc.Text by Parse; or a richdoc.LineBreak,
-// which writeInline renders as a literal newline for ordinary paragraph
-// text) would otherwise split a table row across lines and corrupt the
-// whole grid, not just that one cell. Same fix markdown's own
-// renderTableCell already applies for the identical reason.
-func flattenCellText(s string) string {
-	return strings.ReplaceAll(s, "\n", " ")
+// cellKeepsItsLines reports whether a cell's own line breaks can be written as
+// line breaks. They can when every newline is a SOFT WRAP inside a
+// richdoc.Text: reST folds one back to a space, so the cell comes out of the
+// next parse with the same text.
+//
+// They cannot when a newline sits inside something verbatim -- an inline
+// literal, inline maths, raw inline. Those are written with their own
+// delimiters and their indentation is content, so putting the second line on
+// its own line makes docutils read the indentation as a block quote and lose the
+// closing delimiter: PEP 307's "`for k, v in state.items():\n    setattr(obj, k,
+// v)`" came back with "Inline literal start-string without end-string" INSIDE the
+// cell, and PEP 720's six-line literal gained 26 diagnostics. Such a cell is
+// flattened, as every cell used to be.
+//
+// The binary round-trip probe could not see either: both files already did not
+// round-trip, so they stayed "lossy" while getting much worse. What saw it was
+// counting the diagnostics the RECONSTRUCTION introduces (30 messages before
+// this change, 54 after, back to 28 with this guard).
+func cellKeepsItsLines(inlines []richdoc.Inline) bool {
+	for _, in := range inlines {
+		switch v := in.(type) {
+		case richdoc.Text:
+			// A soft wrap, which is what this whole feature is for.
+		case richdoc.Code:
+			if strings.Contains(v.Value, "\n") {
+				return false
+			}
+		case richdoc.Math:
+			if strings.Contains(v.TeX, "\n") {
+				return false
+			}
+		case richdoc.RawInline:
+			if strings.Contains(v.Text, "\n") {
+				return false
+			}
+		case richdoc.Link:
+			if !cellKeepsItsLines(v.Inlines) {
+				return false
+			}
+		case richdoc.Emph:
+			if !cellKeepsItsLines(v.Inlines) {
+				return false
+			}
+		case richdoc.Strong:
+			if !cellKeepsItsLines(v.Inlines) {
+				return false
+			}
+		case richdoc.Anchor:
+			if !cellKeepsItsLines(v.Inlines) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// cellWidth is a cell's width as a grid column sees it: the widest of its
+// LINES, not the length of the whole text. A cell that keeps the author's own
+// wrapping has several, and measuring the joined string instead made every such
+// column as wide as the cell's entire content.
+func cellWidth(text string) int {
+	w := 0
+	for _, l := range strings.Split(text, "\n") {
+		if n := docrst.TableColumnWidth(l); n > w {
+			w = n
+		}
+	}
+	return w
 }
 
 // spanCellTexts renders a row's cells to text+span pairs, padding the
@@ -459,7 +517,25 @@ func spanCellTexts(w *writer, cells []richdoc.Cell, cols int) []spanCell {
 		if used+span > cols {
 			span = cols - used
 		}
-		out = append(out, spanCell{text: flattenCellText(w.writeInlines(c.Inlines)), span: span})
+		// escapeBlockStart, and BEFORE flattening: a cell's content is parsed
+		// as its own block fragment, so a cell beginning with something reST
+		// reads as a block marker starts one. PEP 624 writes "\(2)" in a cell
+		// precisely to stop that, and the escape was not re-emitted -- so the
+		// reconstruction read it as an enumerated list starting at 2 and put
+		// docutils' own "Enumerated list start value not ordinal-1" INFO into
+		// the cell, where the author had written "(2)". A diagnostic became
+		// document content.
+		//
+		// escapeText already covered "*" and "|", being inline markers; "(", a
+		// bullet "-" and the other seven block shapes are positional and need
+		// this. Flattening afterwards is what makes escaping the FIRST line
+		// enough: every later line ends up mid-line, where no block marker is
+		// recognised.
+		text := escapeBlockStart(w.writeInlines(c.Inlines))
+		if !cellKeepsItsLines(c.Inlines) {
+			text = strings.ReplaceAll(text, "\n", " ")
+		}
+		out = append(out, spanCell{text: text, span: span})
 		used += span
 	}
 	for used < cols {
@@ -477,7 +553,7 @@ func widenColumns(widths []int, cells []spanCell) {
 	col := 0
 	for _, c := range cells {
 		if c.span == 1 {
-			if wd := docrst.TableColumnWidth(c.text); wd > widths[col] {
+			if wd := cellWidth(c.text); wd > widths[col] {
 				widths[col] = wd
 			}
 		}
@@ -496,7 +572,7 @@ func widenSpannedColumns(widths []int, cells []spanCell) {
 	col := 0
 	for _, c := range cells {
 		if c.span > 1 {
-			need := docrst.TableColumnWidth(c.text) - spanTextWidth(widths, col, c.span)
+			need := cellWidth(c.text) - spanTextWidth(widths, col, c.span)
 			if need > 0 {
 				widths[col+c.span-1] += need
 			}
@@ -531,17 +607,45 @@ func gridBorder(widths []int, ch byte) string {
 }
 
 func gridRow(cells []spanCell, widths []int) string {
+	// A row is as many source lines as its TALLEST cell. It used to be exactly
+	// one, with every newline collapsed to a space -- which corrupted nothing
+	// and lost nothing readable, but re-wrapped the cell: "...is not\npresent,
+	// this method raises a" came back as one long line, so 45 of the 1564
+	// real-world files did not round-trip. reST folds a wrap back to a space,
+	// so the two are the same DOCUMENT; they are not the same tree, and keeping
+	// the author's own lines is what makes the tree a fixed point.
+	//
+	// A richdoc.LineBreak inside a cell is still lossy either way: it renders
+	// as a newline, and reST reads a newline inside a cell as a soft wrap, so it
+	// comes back as text rather than as a break. Named rather than hidden -- a
+	// grid cell has no reST spelling for a hard break outside a line block.
+	lines := make([][]string, len(cells))
+	height := 1
+	for i, c := range cells {
+		lines[i] = strings.Split(c.text, "\n")
+		if len(lines[i]) > height {
+			height = len(lines[i])
+		}
+	}
 	var b strings.Builder
-	b.WriteByte('|')
-	col := 0
-	for _, c := range cells {
-		// pad is never negative: spanTextWidth is computed from the same
-		// widths widenColumns/widenSpannedColumns already grew to fit this
-		// very cell (see writeTable).
-		wd := spanTextWidth(widths, col, c.span)
-		pad := wd - docrst.TableColumnWidth(c.text)
-		b.WriteString(" " + c.text + strings.Repeat(" ", pad) + " |")
-		col += c.span
+	for row := 0; row < height; row++ {
+		if row > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteByte('|')
+		col := 0
+		for i, c := range cells {
+			text := ""
+			if row < len(lines[i]) {
+				text = lines[i][row]
+			}
+			// pad is never negative: spanTextWidth is computed from the same
+			// widths widenColumns/widenSpannedColumns already grew to fit this
+			// very cell's widest line (see writeTable and cellWidth).
+			pad := spanTextWidth(widths, col, c.span) - docrst.TableColumnWidth(text)
+			b.WriteString(" " + text + strings.Repeat(" ", pad) + " |")
+			col += c.span
+		}
 	}
 	return b.String()
 }
