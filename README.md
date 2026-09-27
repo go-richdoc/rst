@@ -218,6 +218,23 @@ What survives the whole way, read back out of the finished PDF with
 `pdftotext` rather than trusted: headings, emphasis, bold, bulleted lists,
 block code, and accented text.
 
+The whole chain is now measured over the 1564-file real-world corpus rather
+than a handful of shapes: **1553 of 1564 typeset** in `Strict` mode. The 11
+that do not are all named — 8 are empty sources, so there is nothing to put on
+a page, and 3 carry the author's own `.. raw:: latex` with sphinx-only markup
+(`\sphinxsetup`, `\dimeval`) or `&` alignment in a formula docutils itself
+also writes into `equation*`.
+
+That measurement is why `Options.Strict` exists, and it found a defect upstream
+(fixed in docutils v0.136.16) that the DEFAULT could not have shown. A footnote
+opened with `\par\noindent` and its text followed with nothing between, so TeX
+read `\noindentFirst` — a backslash takes the longest run of letters. Strict
+stops there. Lenient, which is the default and the right default for a document
+arriving from another format, **skips the command and takes the word with it**:
+PEP 495 typeset 15 pages, exit 0, six words short, with nothing anywhere saying
+so. A default that degrades rather than fails can only be measured through the
+strict path, and only the strict path is a witness.
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
