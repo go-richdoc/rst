@@ -363,6 +363,59 @@ Two boundaries are left in this class and neither is a defect to fix here: 19
 files whose cell holds several blocks, which `richdoc.Cell` cannot represent at
 all, and 6 whose row-span the writer does not merge (its own doc comment says so).
 
+### The reconstruction now says nothing the author did not
+
+Ranking by the diagnostics a reconstruction ADDS rather than by tree diffs put a
+different item at the top — 27 messages in 7 files, each one text docutils puts
+into the document that the author never wrote — and it turned out to be four
+causes, all of them cheap once named. **27 → 0.**
+
+**A continuation at column 0.** One line-block `<line>` can span several source
+lines, and it is the INDENT that says so: the reference reads
+
+```rst
+| ``__setitem__(integer | slice, integer) ->
+  None``
+```
+
+as one `<line>` holding one `<literal>`. Written flush left the line block simply
+ends there, so each wrapped line cost three messages — "Line block ends without a
+blank line" plus the unterminated literal and emphasis the break left behind. 21
+of the 27 were this, in PEP 368 alone. A docinfo field value has the same shape
+(an address, a copyright notice) and the same cure.
+
+**`.. contents::` came back as a contentless `.. topic::`.** docutils gives that
+directive a `<topic>` whose only child besides the title is a `<pending>`, and
+skipping the pending — which must never reach a reader — left a topic with a title
+and no body, which docutils rejects. It also invented a `:name:` option out of the
+implicit target the TITLE created, one `.. contents::` does not accept. The
+options come back out of the pending's own details, and the tree distinguishes the
+two spellings that both mean "no backlinks": `:backlinks: none` leaves
+`backlinks: None` and a bare `:backlinks:` leaves `backlinks: ''`. The `contents`
+and `local` CLASSES are deliberately not written back, docutils deriving them
+itself.
+
+**A commented-out directive came back switched ON.** `rawChildSource` had no
+`TagComment` case, so the fallback returned the comment's text without the `..`
+that makes it one: sphinx's own index page comments out a whole admonition
+(`.. .. admonition:: …`), and nested inside a container the reconstruction wrote it
+back as a real directive with no body. At the top level a dedicated `rawComment`
+was used and the same document was fine, which is why only the nested spelling
+showed it. A census of that switch against the `raw*` builders that exist added
+`topic`, `sidebar`, `rubric`, `container` and `raw` at the same time — each one a
+construct that, nested, lost the thing that said what it was.
+
+Round trip **1449 → 1458 of 1564** as a side effect, source-vs-output 1314 → 1321,
+9 fixed and nothing newly lossy.
+
+Two notes on the measuring rather than the fixing. The first set-diff of this
+round compared against a MID-round baseline and reported a regression that was
+really the trade made deliberately in the previous one — a baseline has to be the
+state that shipped. And `check-subjects.sh` now prints what the probes are
+actually measuring, because a `git pull --ff-only -q` reported success and did
+nothing: every number in the corpus directory came from a worktree two commits
+behind, and the check found a second stale subject on its first run.
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively

@@ -56,7 +56,13 @@ func writeMeta(meta map[string]string) string {
 	sort.Strings(keys)
 	lines := make([]string, 0, len(keys))
 	for _, k := range keys {
-		lines = append(lines, ":"+k+": "+meta[k])
+		// A field VALUE can be several lines -- an address, a copyright
+		// notice -- and a field body's continuation has to be INDENTED or the
+		// field list ends there: "Field list ends without a blank line;
+		// unexpected unindent." Three spaces, which is all docutils asks for
+		// (a consistent indent greater than zero), rather than aligning under
+		// the value the way the source happened to.
+		lines = append(lines, ":"+k+": "+continuationIndent(meta[k], 3))
 	}
 	return strings.Join(lines, "\n")
 }
