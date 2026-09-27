@@ -270,6 +270,44 @@ And the lenient default does here what it did for the control word: with no
 `BaseDir` and no `Strict`, an unresolvable image costs the reader the picture and
 reports nothing at all.
 
+### Anchors, and the links that pointed at them
+
+The round-trip probe's largest class was `Heading -> Heading`: 59 of the 1564
+files came back with a different heading id. That is the symptom. The cause is
+that a `.. _label:` had been dropped, and what a reader got was **a link that
+goes nowhere** — which no content measure, no validity measure and no compile can
+see, a dangling fragment being perfectly well-formed. So there is a probe for
+exactly that (`/Users/Shared/rstcorpus/anchorprobe`): every same-document link in
+the reconstruction must have something to land on.
+
+**47 files holding 87 such links, down to 4 holding 10.** Three causes:
+
+An anchor written between two same-level titles belongs to the SECOND section,
+but docutils' section nesting makes it the LAST CHILD of the FIRST one — so
+pairing a pending target with a section SIBLING never found it. Asked about that
+input the reference answers `<section ids="plain-section plain">`:
+`PropagateTargets` finds "the next node" in **document order** and crosses the
+boundary. Walking in document order fixed 41 files' round trip (1374 → 1415).
+
+An anchor whose next node is not a section had nowhere to go, richdoc giving no
+Block but `Heading` an ID. It is now kept as its own reST source, which is what
+`RawBlock` is documented for; an earlier note here said to revisit this "the day
+a Paragraph grows one", and it did not need that day.
+
+A bare target CHAINED onto one that carries a reference is not an anchor at all —
+it is another name for that destination, which docutils resolves to the URL
+(fixed upstream in v0.137.1). Writing it back invented an anchor the source never
+had: `pep-0256`'s `.. _pythondoc:` ended up immediately before a section it never
+preceded, and the next parse made it that section's anchor. **One file**, found
+by set-diffing the corpus — the total had gone UP, so a total would have hidden
+it — and the reason a test here checks the reconstruction is a FIXED POINT rather
+than merely checking its shape.
+
+The 10 links still dangling are two named kinds: a duplicated target name, whose
+`-1`/`-3` disambiguation suffixes richdoc has no way to reproduce, and a
+directive's own `:name:` option (`.. table:: :name: namedtabular`), which needs an
+id on a Block that has none.
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
