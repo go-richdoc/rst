@@ -308,6 +308,61 @@ The 10 links still dangling are two named kinds: a duplicated target name, whose
 directive's own `:name:` option (`.. table:: :name: namedtabular`), which needs an
 id on a Block that has none.
 
+### Table cells
+
+`Table -> Table` was then the largest class — 58 files. The coarse shape groups by
+block type, which is too coarse to act on, so narrowing it to the first differing
+CELL and naming the difference gave four causes instead of one. Three were worth
+fixing and the fourth is a model boundary.
+
+**A cell's escape was dropped.** PEP 624 writes `\(2)` in a cell precisely to stop
+reST reading an enumerated list there. The escape was not re-emitted, so the
+reconstruction read `(2)` as a list starting at 2 and put docutils' own
+"Enumerated list start value not ordinal-1" INFO **into the cell**, where the
+author had written `(2)`. `escapeText` already covered `*` and `|`, being inline
+markers; `(`, a bullet `-` and the other seven block shapes are positional and
+need `escapeBlockStart`, which a cell never got.
+
+**A cell's own wrapping was collapsed to one line.** That corrupts nothing and
+loses nothing readable — reST folds a wrap back to a space — but it re-wraps the
+cell, so 45 files came back with a different tree. A grid row is now as many
+source lines as its tallest cell, and column widths are measured against a cell's
+widest LINE rather than its whole text.
+
+**A multi-paragraph cell is separated by a blank line** rather than a space.
+Either way the block structure is gone (`richdoc.Cell` has no `Blocks`) and either
+way a consumer sees whitespace, so nothing is lost by the change — but a space
+re-parses as one text and a blank line re-parses as two blocks, so only the blank
+line is a fixed point. It also puts the break back into the reconstructed reST,
+where a grid cell really can hold two paragraphs.
+
+Round trip **1415 → 1449 of 1564**, and the table class from 58 files to 18.
+
+### The probe that was too coarse to see a regression
+
+The multi-line change made two files much worse and the round-trip probe reported
+nothing, because it is BINARY: `pep-0307` and `pep-0720` already did not
+round-trip, so they stayed "lossy" while gaining 1 and 26 diagnostics. A newline
+inside a literal is CONTENT, not a wrap — written as a real line break, its
+indentation reads as a block quote and the closing delimiter is lost, so
+`Inline literal start-string without end-string` appeared **inside a cell**.
+
+So there is a probe that counts what the reconstruction ADDS
+(`/Users/Shared/rstcorpus/diagprobe`): parse the original, write it back, parse
+that, and compare the `<system_message>` counts. **30 messages in 8 files before
+this round, 54 after the multi-line change, 27 in 7 files with a guard that
+flattens a cell whose newline sits inside verbatim content.** No file gained
+diagnostics that did not already, and `pep-0624` stopped gaining them.
+
+That trade is deliberate and it costs something: one cell cannot be half
+multi-line, so a cell holding both a wrapped paragraph and a literal is flattened
+whole, and one file's round trip was given up for it (1450 → 1449). A flattened
+cell beats a corrupted one.
+
+Two boundaries are left in this class and neither is a defect to fix here: 19
+files whose cell holds several blocks, which `richdoc.Cell` cannot represent at
+all, and 6 whose row-span the writer does not merge (its own doc comment says so).
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
