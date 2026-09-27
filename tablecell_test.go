@@ -173,3 +173,48 @@ func TestEscapeBlockStartLeavesALaterLineAlone(t *testing.T) {
 		t.Errorf("a continuation line was escaped: %q", got)
 	}
 }
+
+// TestCellKeepsItsLinesPerInlineKind exercises the guard on every inline kind
+// that can carry a newline of its own, rather than only on the literal block the
+// corpus happened to have. Each of these is CONTENT with a line break in it, so
+// writing the cell across lines would put that break at a block start; a
+// richdoc.Text's newline is a soft wrap and must not trip the guard.
+func TestCellKeepsItsLinesPerInlineKind(t *testing.T) {
+	cases := []struct {
+		name string
+		in   []richdoc.Inline
+		keep bool
+	}{
+		{"a text's newline is a soft wrap", []richdoc.Inline{richdoc.Text{Value: "a\nb"}}, true},
+		{"code", []richdoc.Inline{richdoc.Code{Value: "a\nb"}}, false},
+		{"code on one line", []richdoc.Inline{richdoc.Code{Value: "ab"}}, true},
+		{"math", []richdoc.Inline{richdoc.Math{TeX: "a\nb"}}, false},
+		{"raw inline", []richdoc.Inline{richdoc.RawInline{Format: "rst", Text: "a\nb"}}, false},
+		{"inside a link", []richdoc.Inline{richdoc.Link{URL: "u", Inlines: []richdoc.Inline{richdoc.Code{Value: "a\nb"}}}}, false},
+		{"inside emphasis", []richdoc.Inline{richdoc.Emph{Inlines: []richdoc.Inline{richdoc.Code{Value: "a\nb"}}}}, false},
+		{"inside strong", []richdoc.Inline{richdoc.Strong{Inlines: []richdoc.Inline{richdoc.Code{Value: "a\nb"}}}}, false},
+		{"inside an anchor", []richdoc.Inline{richdoc.Anchor{ID: "x", Inlines: []richdoc.Inline{richdoc.Code{Value: "a\nb"}}}}, false},
+		{"a link with nothing verbatim", []richdoc.Inline{richdoc.Link{URL: "u", Inlines: []richdoc.Inline{richdoc.Text{Value: "a\nb"}}}}, true},
+	}
+	for _, c := range cases {
+		if got := cellKeepsItsLines(c.in); got != c.keep {
+			t.Errorf("%s: cellKeepsItsLines = %v, want %v", c.name, got, c.keep)
+		}
+	}
+}
+
+// TestEscapeBlockStartEscapesAnAdornmentAfterABlankLine covers the adornment
+// branch at the second block start, which a cell can now reach: four or more of
+// one punctuation character is a transition or a section underline, and left bare
+// it would end the cell's paragraph and start a section.
+func TestEscapeBlockStartEscapesAnAdornmentAfterABlankLine(t *testing.T) {
+	got := escapeBlockStart("first paragraph\n\n++++")
+	if got != "first paragraph\n\n\\++++" {
+		t.Errorf("escapeBlockStart = %q, want the adornment escaped", got)
+	}
+	// A blank line with spaces in it still ends the block, and the line after it
+	// is still a block start.
+	if got := escapeBlockStart("first\n   \n- bullet"); got != "first\n   \n\\- bullet" {
+		t.Errorf("a whitespace-only line did not end the block: %q", got)
+	}
+}

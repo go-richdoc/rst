@@ -416,6 +416,15 @@ actually measuring, because a `git pull --ff-only -q` reported success and did
 nothing: every number in the corpus directory came from a worktree two commits
 behind, and the check found a second stale subject on its first run.
 
+The coverage floor earned its keep on the same change. The census added five
+cases to `rawChildSource`, and the floor failed because one of them was never
+reached: docutils refuses a topic or a sidebar nested in a body element at all
+(`The "topic" directive may not be used within topics or body elements.`), so
+that case was dead code. The corpus had nothing to say either way — it contains
+no such document, because no such document parses. It was removed rather than
+covered by a test of something invalid, and the remaining four are witnessed by a
+nested-construct case.
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively

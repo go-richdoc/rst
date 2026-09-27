@@ -145,3 +145,32 @@ func TestACommentedOutDirectiveStaysCommented(t *testing.T) {
 		t.Errorf("the real admonition was lost:\n%s", out)
 	}
 }
+
+// TestNestedConstructsKeepTheirDirective witnesses the other three cases the
+// same census added to rawChildSource. Nested inside a container, each of these
+// used to lose the thing that said what it was: a rubric became bare text, an
+// inner container's body was spliced into the outer one, and a raw block's
+// target-format markup was emitted as if the author had typed it into the reST.
+//
+// There is no case here for a nested topic or sidebar because there cannot be
+// one: docutils answers `The "topic" directive may not be used within topics or
+// body elements.` A case for them was written, the coverage floor showed it was
+// never reached, and it was removed rather than covered by a test of something
+// invalid.
+func TestNestedConstructsKeepTheirDirective(t *testing.T) {
+	const src = ".. container:: outer\n\n" +
+		"   .. rubric:: A Rubric\n\n" +
+		"   .. container:: inner\n\n" +
+		"      Inner body.\n\n" +
+		"   .. raw:: html\n\n" +
+		"      <b>bold</b>\n"
+	out, msgs := reconstruct(t, src)
+	if msgs != 0 {
+		t.Errorf("the reconstruction gained %d diagnostic(s):\n%s", msgs, out)
+	}
+	for _, want := range []string{".. rubric:: A Rubric", ".. container:: inner", ".. raw:: html"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+}

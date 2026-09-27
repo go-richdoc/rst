@@ -933,6 +933,11 @@ func rawChildSource(n doctree.Node) string {
 		doctree.TagNote, doctree.TagTip, doctree.TagWarningAdmonition,
 		doctree.TagAdmonition:
 		return rawAdmonition(el)
+	// There is deliberately NO case for a topic or a sidebar here. docutils
+	// refuses one nested in a body element at all -- ".. topic:: X" inside a
+	// ".. container::" parses to `The "topic" directive may not be used within
+	// topics or body elements.` -- so the case was dead code, which is what the
+	// coverage floor caught after the corpus had nothing to say either way.
 	case doctree.TagComment:
 		// Without this the fallback returned the comment's TEXT, so a comment
 		// nested in a container or an admonition stopped being a comment:
@@ -942,8 +947,6 @@ func rawChildSource(n doctree.Node) string {
 		// "Content block expected for the \"admonition\" directive; none
 		// found." A commented-out construct came back switched on.
 		return rawComment(el)
-	case doctree.TagTopic, doctree.TagSidebar:
-		return rawTopic(el)
 	case doctree.TagRubric:
 		return rawRubric(el)
 	case doctree.TagContainer:
