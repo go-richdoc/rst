@@ -24,6 +24,22 @@ type Options struct {
 	// rather than the whole document. A caller writing its own LaTeX and
 	// wanting to be told when it is wrong asks for strict.
 	Strict bool
+
+	// BaseDir says where the document's images are.
+	//
+	// It exists because docutils v0.137.0 stopped dropping images: a relative
+	// \includegraphics resolves against the PROCESS's working directory, and
+	// the engine has no resolver seam for a figure (its Options.Resolve serves
+	// classes, packages and \input files), so without this a document that
+	// arrived from anywhere else cannot find its own pictures. Over the
+	// 1564-file corpus that is 43 documents.
+	//
+	// Empty (the default) keeps the process's working directory, which is the
+	// previous behaviour and is right for a caller already sitting in the
+	// document's own tree. An absolute reference, a http(s) URL and a data:
+	// URI are left alone (see rebaseImages): the last two cannot be satisfied
+	// by any local file, base or no base.
+	BaseDir string
 }
 
 // Write typesets a document and returns the PDF.
@@ -48,7 +64,7 @@ func WriteTo(w io.Writer, doc *richdoc.Document, opt Options) (pages int, err er
 	if err != nil {
 		return 0, fmt.Errorf("pdf: writing the document as reST: %w", err)
 	}
-	pages, err = compile(src, engine.Options{Lenient: !opt.Strict}, w)
+	pages, err = compile(rebaseImages(src, opt.BaseDir), engine.Options{Lenient: !opt.Strict}, w)
 	if err != nil {
 		return 0, fmt.Errorf("pdf: typesetting it: %w", err)
 	}
