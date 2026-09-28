@@ -529,6 +529,55 @@ the next reader will look for it instead of being tried again.
 italics is the nearest rendering every format has, and preserving the reST
 spelling as raw source would make the construct invisible to all of them.
 
+### The null separator a role needed
+
+reST attaches markup to an adjacent word with an ESCAPED SPACE, its null
+separator. PEP 410 writes
+
+```rst
+10\ :sup:`-9`
+```
+
+and without that separator the writer produced `10:sup:`-9``, which docutils does
+not read as a role at all: it is plain text, and **the superscript disappears**.
+The separator logic knew the characters that start emphasis, a literal, a
+reference and a substitution — `*`, `` ` ``, `[`, `|`, `_` — and not `:`, which is
+how a role begins.
+
+### The same continuation indent, a third time
+
+A directive OPTION value can run to several lines. An image's `:alt:` is the
+common case — PEP 495 has a two-line one — and a field body's continuation has to
+be indented or the field ends there: the second line became a NEW option, so the
+alt text was truncated at the break and the rest read as an unknown option.
+
+This is the third home of one defect, after the line block and the docinfo field
+list. It is fixed in `rawDirectiveSource`, the one place all two dozen
+option-building sites funnel through, rather than at whichever one the next corpus
+file happens to reach.
+
+Round trip **1460 → 1471 of 1564**, equivalence 1339 → 1343, nothing newly lossy.
+
+### Where an image's options have to be fixed, and it is not here
+
+A standalone `.. image::` keeps its URI, its alt text and its `:target:`, and
+loses `:align:`, `:width:`, `:height:`, `:scale:` and `:class:`. Measured over the
+corpus: **43 of the 79 standalone images carry at least one of those, in 18
+files** — more than half.
+
+`richdoc.Image` has `URL`, `Alt` and `Title`, and no field for any of them, so
+this package cannot carry them however it is written. The two workarounds both
+cost more than the loss:
+
+- reconstructing such an image as raw reST preserves every option and makes the
+  **image itself vanish** for every consumer that is not reST — the same trade
+  that decided the doctest block, and the image is the more valuable of the two.
+- inventing a convention inside `Alt` or `Title` puts markup where a renderer
+  expects text.
+
+So the fix belongs in `richdoc`, as fields on `Image`, where every converter would
+get it at once. Recorded here sized and located rather than approximated.
+
 
 ## Round-trip
 
