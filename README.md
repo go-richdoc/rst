@@ -578,6 +578,42 @@ cost more than the loss:
 So the fix belongs in `richdoc`, as fields on `Image`, where every converter would
 get it at once. Recorded here sized and located rather than approximated.
 
+### What the equivalence number was counting
+
+"1343 equivalent once the NAMED boundaries are removed" was not true to its own
+wording: two boundaries named in this README were still being counted as
+divergence. Subtracting them — in the ONE normaliser applied to both sides — gives
+**1389 of 1564, and 175 genuinely unexplained**.
+
+**A `class` richdoc has nowhere to put.** richdoc carries no presentational
+attribute on any node: no `Class`, `Style`, `Width` or `Height` anywhere. A reST
+`:class:` option, a `.. class::` directive and sphinx's `.. rst-class::` therefore
+reach a construct that converts to a native richdoc node and are lost however this
+package is written. Measured: **187 author-written class attributes in 57 files**
+(`/Users/Shared/rstcorpus/classprobe`), on paragraphs (63), tables (83), images
+(20) and a scattering of block quotes, literals and lists.
+
+The subtraction is deliberately narrow. A class on an admonition, container,
+rubric, topic or figure is NOT subtracted, because those are rebuilt as reST source
+and do write `:class:` back — so a regression there still reports. Shown: making an
+admonition drop its class took the number 1389 → 1386, and restoring returned it.
+
+**`<title_reference>` → `<emphasis>`** is normalised on both sides, the text inside
+still comparing.
+
+Together with the image options this is one decision, not three: whether richdoc
+should carry presentational attributes at all. **187 class attributes in 57 files
+and 43 image options in 18** is what it is worth, and it is a question about the
+shared model rather than about this converter.
+
+### A note on reading the probe's own output
+
+Twice in one round an LCS-aligned insertion was read as "the output gained a
+block". It had not: the aligner places an insertion where the alignment is
+cheapest, and that position is its choice rather than the document's. The diff is
+sound; attributing a `+` line to the construct printed beside it is not. Checking
+the source directly is what settled both.
+
 
 ## Round-trip
 
