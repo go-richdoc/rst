@@ -84,6 +84,22 @@ func inlineSourceOf(el *doctree.Element) string {
 }
 
 func rawDirectiveSource(header string, options []string, content string) string {
+	// Every option's continuation lines are indented under its own marker, in
+	// ONE place rather than at each of the two dozen call sites that build one.
+	// An option VALUE can run to several lines -- an image's ":alt:" is the
+	// common case, and PEP 495 has a two-line one -- and a field body's
+	// continuation has to be indented or the field ends there: the second line
+	// became a NEW option, so the alt text was truncated at the line break and
+	// the rest read as an unknown option. The same defect was fixed twice before
+	// this, in the line block and in the docinfo field list; fixing it here
+	// covers the class instead of the next instance.
+	if len(options) > 0 {
+		indented := make([]string, len(options))
+		for i, o := range options {
+			indented[i] = continuationIndent(o, 3)
+		}
+		options = indented
+	}
 	switch {
 	case len(options) == 0 && content == "":
 		return header

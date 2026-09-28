@@ -16,7 +16,15 @@ import (
 // whitespace or one of the suffix set (Inliner.start_string_prefix and
 // end_string_suffix, docutils/rst's own port of them).
 const (
-	inlineStarters = "*`[|_"
+	// ":" is here because a ROLE starts with one. PEP 410 writes
+	// "10\ :sup:`-9`" -- an escaped space, reST's null separator, attaching the
+	// superscript to the digit with no visible gap -- and without ":" in this
+	// set the separator was not written back, so "10:sup:`-9`" came out. That is
+	// not a role at all: docutils reads it as plain text and the superscript
+	// DISAPPEARS. A colon at an inline boundary that was not markup gets a
+	// harmless null separator, which is the same conservative trade escapeText
+	// already makes.
+	inlineStarters = "*`[|_:"
 	validBeforeSet = "-:/'\"<([{‘“«¡¿"
 	validAfterSet  = "-.,:;!?\\/'\")]}>’”»"
 )
