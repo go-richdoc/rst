@@ -142,8 +142,7 @@ func (w *writer) writeInline(n richdoc.Inline) string {
 		// round-trips EXACTLY under the explicit form and becomes an auto
 		// reference under the other. Source-vs-output equivalence said so
 		// plainly: 935 with this, 865 with "[#]_".
-		w.footnotes = append(w.footnotes, v)
-		return "[" + strconv.Itoa(len(w.footnotes)) + "]_"
+		return "[" + strconv.Itoa(w.footnoteNumber(v)) + "]_"
 	case richdoc.Anchor:
 		return writeAnchor(v)
 	}

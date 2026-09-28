@@ -294,6 +294,14 @@ type converter struct {
 	// an id to (no Block but Heading has one), and which are therefore kept as
 	// their own reST source instead of being dropped.
 	anchorTaken map[*doctree.Element]bool
+	// expandingNote holds the footnote/citation names currently being inlined,
+	// so a note that cites itself -- directly or through another note -- is not
+	// followed forever. See convertNoteRef.
+	expandingNote map[string]bool
+	// inRawSource is set while collect descends into a subtree that will be
+	// rebuilt as reST source, where a reference is written verbatim and
+	// therefore consumes nothing. See reconstructedAsSource.
+	inRawSource bool
 }
 
 // resolveConsumed decides, before any conversion, which definitions will
@@ -342,7 +350,9 @@ func (c *converter) collect(n doctree.Node) {
 		// the reference, so Parse -> Write printed it twice. reST
 		// convention puts definitions last, which is why the common
 		// case looked right.
-		if name := el.Attr("refname"); name != "" {
+		// ...but only where the conversion will actually reach it: see
+		// reconstructedAsSource.
+		if name := el.Attr("refname"); name != "" && !c.inRawSource {
 			if c.referenced == nil {
 				c.referenced = map[string]bool{}
 			}
@@ -360,9 +370,44 @@ func (c *converter) collect(n doctree.Node) {
 			c.substDefs[name] = el
 		}
 	}
+	if reconstructedAsSource[el.Tag] && !c.inRawSource {
+		c.inRawSource = true
+		for _, ch := range el.Children {
+			c.collect(ch)
+		}
+		c.inRawSource = false
+		return
+	}
 	for _, ch := range el.Children {
 		c.collect(ch)
 	}
+}
+
+// reconstructedAsSource lists the block elements convertBlockNode rebuilds as
+// reST SOURCE rather than converting. Inside one of these, a footnote or
+// citation reference is written back verbatim -- convertNoteRef never sees it --
+// so it is not a reference that CONSUMES its definition, and counting it as one
+// dropped the definition while leaving the marker behind.
+//
+// PEP 302 opens with a ".. warning::" citing [10]_ and [11]_. Both definitions
+// were dropped and both markers stayed, so the document ended with two footnote
+// references pointing at nothing and two of its nine notes gone. 14 corpus files
+// lose 42 definitions this way.
+//
+// This list has to agree with convertBlockNode's own raw-source cases. Keeping
+// them in step is guarded by TEST rather than by this comment: there is a case
+// for a reference inside each container here, and a new raw-source construct
+// that forgets to appear in this list fails it.
+var reconstructedAsSource = map[string]bool{
+	doctree.TagAdmonition: true, doctree.TagAttention: true, doctree.TagCaution: true,
+	doctree.TagDanger: true, doctree.TagErrorAdmonition: true, doctree.TagHint: true,
+	doctree.TagImportant: true, doctree.TagNote: true, doctree.TagTip: true,
+	doctree.TagWarningAdmonition: true,
+	doctree.TagTopic:             true, doctree.TagSidebar: true, doctree.TagContainer: true,
+	doctree.TagCompound: true, doctree.TagFigure: true, doctree.TagLineBlock: true,
+	doctree.TagFieldList: true, doctree.TagDefinitionList: true,
+	doctree.TagOptionList: true, doctree.TagDirective: true, doctree.TagComment: true,
+	doctree.TagRubric: true, doctree.TagDecoration: true,
 }
 
 // collectSectionAnchors finds the explicit anchors written in front of a
@@ -1220,7 +1265,27 @@ func (c *converter) convertNoteRef(el *doctree.Element) []richdoc.Inline {
 	if name == "" || !ok {
 		return []richdoc.Inline{richdoc.RawInline{Format: "rst", Text: rawNoteRef(el)}}
 	}
-	return []richdoc.Inline{richdoc.Footnote{Blocks: c.convertBlocks(noteBody(def), 1)}}
+	// A note's body is INLINED here, so a note that cites itself is a CYCLE, and
+	// following it was a stack overflow -- a crash, on reST docutils reads
+	// without complaint: ".. [1] A note citing itself [1]_." gives one <footnote>
+	// with two backrefs. Nothing in the 1564-file corpus does it, which is why
+	// no sweep had found it; the shape turned up while asking a different
+	// question about footnote numbering.
+	//
+	// A reference back into a note already being expanded degrades to the
+	// verbatim marker, which is exactly what an unresolvable reference above
+	// already does: the marker is not lost, and it is the only answer available
+	// to a model that carries a note by VALUE.
+	if c.expandingNote[name] {
+		return []richdoc.Inline{richdoc.RawInline{Format: "rst", Text: rawNoteRef(el)}}
+	}
+	if c.expandingNote == nil {
+		c.expandingNote = map[string]bool{}
+	}
+	c.expandingNote[name] = true
+	blocks := c.convertBlocks(noteBody(def), 1)
+	delete(c.expandingNote, name)
+	return []richdoc.Inline{richdoc.Footnote{Blocks: blocks}}
 }
 
 // noteBody returns a footnote/citation definition's content children,
