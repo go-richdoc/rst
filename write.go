@@ -4,6 +4,7 @@
 package rst
 
 import (
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +33,9 @@ func Write(d *richdoc.Document) ([]byte, error) {
 		return []byte{}, nil
 	}
 	w := &writer{}
+	// Before anything is numbered: a definition this writer will emit VERBATIM
+	// holds its own label, and the counter must not choose the same one.
+	w.reserveRawNoteLabels(d.Blocks)
 	var parts []string
 	if len(d.Meta) > 0 {
 		parts = append(parts, writeMeta(d.Meta))
@@ -70,16 +74,114 @@ func writeMeta(meta map[string]string) string {
 // writer holds the render-wide footnote accumulator; see [Write].
 type writer struct {
 	footnotes []richdoc.Footnote
+	// bodies maps a note's RENDERED body to the number already given it, so the
+	// same note cited twice is one definition cited twice.
+	bodies map[string]int
+	// taken holds the labels verbatim definitions already hold, labels the
+	// numbers given to each note, and skipped how far the counter has been
+	// pushed past a taken label.
+	taken   map[string]bool
+	labels  []int
+	skipped int
+}
+
+// reRawNoteDef matches a note definition inside a RawBlock's reST, which keeps
+// the author's OWN label.
+var reRawNoteDef = regexp.MustCompile(`(?m)^\.\. \[([^\]]+)\]`)
+
+// reserveRawNoteLabels seeds the numbering with the labels already spoken for by
+// definitions this writer will emit VERBATIM.
+//
+// A note referenced only from inside a construct rebuilt as reST source keeps its
+// own label on both sides -- the marker is written verbatim and so is the
+// definition. Meanwhile footnoteNumber counts 1..N for the notes it inlines, and
+// nothing stopped the two from choosing the same label: PEP 550 came out with
+// ".. [9]" and ".. [10]" TWICE, once verbatim and once renumbered, so docutils
+// reported a duplicate and the references stopped resolving. Found by set-diff
+// after the definitions were saved -- the round trip had gone DOWN by three files
+// while the definition count went up.
+func (w *writer) reserveRawNoteLabels(blocks []richdoc.Block) {
+	if w.taken == nil {
+		w.taken = map[string]bool{}
+	}
+	for _, b := range blocks {
+		switch v := b.(type) {
+		case richdoc.RawBlock:
+			if v.Format != "" && !strings.EqualFold(v.Format, "rst") {
+				continue
+			}
+			for _, m := range reRawNoteDef.FindAllStringSubmatch(v.Text, -1) {
+				w.taken[m[1]] = true
+			}
+		case richdoc.BlockQuote:
+			w.reserveRawNoteLabels(v.Blocks)
+		case richdoc.List:
+			for _, it := range v.Items {
+				w.reserveRawNoteLabels(it.Blocks)
+			}
+		}
+	}
+}
+
+// footnoteNumber gives a note its label, reusing the one an identical note
+// already has.
+//
+// richdoc carries a note BY VALUE: the body is inlined at every reference, so
+// three references to one note arrive as three Footnote values with the same
+// blocks. Appending each of them produced three definitions with three
+// different numbers -- a document that gained two footnotes it never had, in
+// 117 of the 1564 real-world files.
+//
+// The key is the rendered body, which is the only thing the model offers: the
+// label is not carried, so two notes cannot be told apart by name. That is also
+// this fix's BLIND SPOT, stated rather than hidden -- two genuinely distinct
+// notes whose bodies render identically become one. They render identically too,
+// and reST has no way to say "these two same-looking notes are different", so
+// the cost is a label count rather than content.
+func (w *writer) footnoteNumber(fn richdoc.Footnote) int {
+	body := w.writeBlocks(fn.Blocks)
+	if w.bodies == nil {
+		w.bodies = map[string]int{}
+	}
+	// An EMPTY body carries no identity, so it cannot be a dedup key. PEP 653
+	// writes nine notes whose content is unindented, which docutils reads as nine
+	// notes holding nothing but a diagnostic -- and this package strips
+	// diagnostics, so all nine arrived here with empty blocks and merged into
+	// ONE. Nine definitions became one, which is a worse loss than the
+	// duplication the dedup exists to prevent.
+	if body != "" {
+		if n, ok := w.bodies[body]; ok {
+			return n
+		}
+	}
+	w.footnotes = append(w.footnotes, fn)
+	// Skip any label a verbatim definition already holds; see
+	// reserveRawNoteLabels.
+	n := len(w.footnotes) + w.skipped
+	for w.taken[strconv.Itoa(n)] {
+		w.skipped++
+		n++
+	}
+	w.labels = append(w.labels, n)
+	if body != "" {
+		w.bodies[body] = n
+	}
+	return n
 }
 
 func (w *writer) writeFootnoteDefs() string {
 	if len(w.footnotes) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(w.footnotes))
-	for i, fn := range w.footnotes {
-		body := indentBlock(w.writeBlocks(fn.Blocks))
-		parts = append(parts, ".. ["+strconv.Itoa(i+1)+"]\n\n"+body)
+	// BY INDEX, re-reading the length each time: writing a note's body can
+	// append MORE notes, because a note may cite one. "for i, fn := range" fixes
+	// the length at entry, so those were numbered at the reference site and then
+	// never defined -- PEP 302 came out with references [10]_ and [11]_ and no
+	// definitions for them, and two of its nine notes simply gone.
+	var parts []string
+	for i := 0; i < len(w.footnotes); i++ {
+		body := indentBlock(w.writeBlocks(w.footnotes[i].Blocks))
+		parts = append(parts, ".. ["+strconv.Itoa(w.labels[i])+"]\n\n"+body)
 	}
 	return strings.Join(parts, "\n\n")
 }

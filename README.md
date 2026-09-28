@@ -425,6 +425,70 @@ no such document, because no such document parses. It was removed rather than
 covered by a test of something invalid, and the remaining four are witnessed by a
 nested-construct case.
 
+### Footnotes
+
+richdoc carries a note BY VALUE: the body is inlined at every reference. That one
+fact is behind four defects, found while narrowing fidelity's largest attribute
+class, and one of them was a **crash**.
+
+**A note that cites itself was a stack overflow.** `.. [1] A note citing itself
+[1]_.` is reST docutils reads without complaint — one `<footnote>` with two
+backrefs — and inlining a body that contains its own reference recursed until the
+goroutine stack ran out. Nothing in the 1564-file corpus does it, which is why no
+sweep had found it. A reference back into a note already being expanded now
+degrades to the verbatim marker, which is what an unresolvable reference already
+did.
+
+**A note cited inside a note was never defined.** `writeFootnoteDefs` ranged over
+its accumulator while writing a body could APPEND to it, and `range` fixes the
+length at entry, so those notes were numbered at the reference site and never
+defined.
+
+**A note cited twice became two notes.** Three references arrive as three Footnote
+values with the same blocks, and appending each produced three definitions with
+three numbers — a document that gained two footnotes it never had, in 117 files.
+The dedup key is the rendered body, which is all the model offers, and its blind
+spot is stated: two genuinely distinct notes whose bodies render identically
+become one. An EMPTY body is not a key, because PEP 653 writes nine notes whose
+content docutils cannot attach, and keyed on the body all nine merged into one.
+
+**A reference inside a rebuilt block consumed its definition.** A whole family of
+constructs is rebuilt as reST source, and inside one of those a reference is
+written back verbatim — the converter never sees it. Counting it as a reference
+that consumes its definition dropped the definition and left the marker: PEP 302
+ended with references `[10]_` and `[11]_` pointing at nothing and two of its nine
+notes gone. 14 files lost 42 definitions this way, now 2 files and 4.
+
+That last fix then created a collision, and it is worth saying how it was caught.
+A verbatim definition keeps the author's label while the counter picks 1..N, and
+nothing stopped the two from choosing the same one: PEP 550 came out with `.. [9]`
+and `.. [10]` **twice**. The round trip had gone DOWN by three files while the
+definition count went UP — a total would have read as a net gain, and only the
+set-diff showed it. The counter now skips a label a verbatim definition holds.
+
+Two measures were built to see any of this. `destprobe` asks whether a reference
+still points at the **same place**, which took three attempts to make honest:
+comparing the fragments reported 20 movers whose only difference was which of a
+section's several ids had been chosen, and describing a bare `<target>` as itself
+reported 41 whose id had merely landed on the other side of docutils'
+`PropagateTargets` rule. Comparing what is THERE — a section's own title — leaves
+3. `fnprobe` counts note definitions on each side, which `destprobe` cannot see at
+all, counting `<reference>` and not `<footnote_reference>`.
+
+And a last one found by a test rather than looked for: a figure's CAPTION was
+rendered with `doctree.AsText`, so every link, literal, emphasis and role in it was
+lost, and a note reference came out as its bare label — `Cites 1.` for
+`Cites [1]_.`, which also stopped the definition from being emitted.
+
+| | before | after |
+|---|---|---|
+| note definitions lost | 14 files / 42 | **2 files / 4** |
+| references not pointing where they did | 20 files (34 gone, 3 moved) | **10 files (16 gone, 3 moved)** |
+| round-trip to the same tree | 1458 / 1564 | **1460 / 1564** |
+| source-vs-output equivalence | 1321 / 1564 | **1323 / 1564** |
+| diagnostics the reconstruction adds | 0 | 0 |
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively

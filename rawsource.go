@@ -411,7 +411,13 @@ func rawFigure(el *doctree.Element) string {
 	}
 	var contentParts []string
 	if caption != nil {
-		if t := strings.TrimSpace(doctree.AsText(caption)); t != "" {
+		// inlineSourceOf, not AsText: a caption is a paragraph and carries
+		// inline markup like any other. AsText returns a node's TEXT, so every
+		// link, literal, emphasis and role in a figure's caption was lost -- and
+		// a footnote reference came out as its bare label, "Cites 1." for
+		// "Cites [1]_.", which also stopped the note's definition from being
+		// emitted at all. The same fix the other raw* content paths already got.
+		if t := strings.TrimSpace(inlineSourceOf(caption)); t != "" {
 			contentParts = append(contentParts, t)
 		}
 	}
