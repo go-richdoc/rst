@@ -488,6 +488,47 @@ lost, and a note reference came out as its bare label — `Cites 1.` for
 | source-vs-output equivalence | 1321 / 1564 | **1323 / 1564** |
 | diagnostics the reconstruction adds | 0 | 0 |
 
+### A citation is not a footnote
+
+reST has both and they are different things. A footnote is a note at the foot of
+the page; a CITATION names a bibliographic entry, and **its key is what the reader
+sees** — `[CIT2002]`. Converting it as a footnote inlined the body and threw the
+key away, so the reconstruction said `[1]_` and `.. [1]` where the author wrote
+`[CIT2002]_` and `.. [CIT2002]`: a number in place of a key, in 15 of the 1564
+files.
+
+`richdoc.CrossRef` with `RefCite` is what models it, and the write side has always
+emitted `[target]_` for that — only the parse side was missing. The target is the
+reference's own TEXT, not its refname: docutils normalises a name to lower case
+for matching, so the refname is `cit2002` while the document says `CIT2002`. And a
+citation is never "consumed", because its reference now carries only the key, so
+the definition is the only place the body can live.
+
+Source-vs-output equivalence **1323 → 1339 of 1564**.
+
+### The doctest block that is not worth keeping
+
+reST has a third spelling for code: a paragraph opening with `>>>`, needing
+neither `::` nor indentation. It comes out as a `::` literal block, and after this
+round that is a DECIDED loss rather than an oversight — it renders the same, and it
+costs something real, since a doctest is collected by test runners and a literal
+block is not. 9 files.
+
+Two ways to keep it were tried and both cost more:
+
+| attempt | cost |
+|---|---|
+| the writer keys on the text starting with `>>>` | 110 literal blocks that SHOW a session became doctest blocks — twelve times as many as there are real ones. Fidelity 1323 → **1237** |
+| the parse side marks the language `pycon` | collides with the authors' own `.. code-block:: pycon`, which arrives indistinguishable — a sentinel that means two things |
+| a `RawBlock`, this package's usual answer | the code VANISHES for every consumer that is not reST |
+
+A spelling change is the smallest of the three, and it is now written down where
+the next reader will look for it instead of being tried again.
+
+`<title_reference>` → `<emphasis>` (16 files) stays for the same kind of reason:
+italics is the nearest rendering every format has, and preserving the reST
+spelling as raw source would make the construct invisible to all of them.
+
 
 ## Round-trip
 

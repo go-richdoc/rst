@@ -317,9 +317,17 @@ func (c *converter) resolveConsumed() {
 		c.consumed = map[string]bool{}
 	}
 	for name := range c.referenced {
-		if _, ok := c.footnoteDefs[name]; ok {
-			c.consumed[name] = true
+		def, ok := c.footnoteDefs[name]
+		if !ok {
+			continue
 		}
+		// A CITATION is never consumed. Its reference is a richdoc.CrossRef
+		// carrying only the key, so the definition is the only place the body
+		// can live -- dropping it left "[CIT2002]_" pointing at nothing.
+		if def.Tag == doctree.TagCitation {
+			continue
+		}
+		c.consumed[name] = true
 	}
 }
 
@@ -624,6 +632,22 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 	case doctree.TagTransition:
 		return []richdoc.Block{richdoc.ThematicBreak{}}
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock:
+		// A DOCTEST BLOCK -- reST's third spelling for code, a paragraph opening
+		// with ">>>" and needing neither "::" nor indentation -- comes out as a
+		// "::" literal block, and that is a DECIDED loss rather than an
+		// oversight. It renders the same and costs something real, since a
+		// doctest is collected by test runners and a literal block is not; 9 of
+		// the 1564 real-world files.
+		//
+		// Two ways to keep it were tried and both cost more. Keying the writer on
+		// the text starting with ">>>" turned 110 literal blocks that SHOW a
+		// session into doctest blocks (fidelity 1323 -> 1237): there are twelve
+		// times as many of those as of real doctest blocks. Marking the language
+		// "pycon" instead collided with the authors' own ".. code-block:: pycon",
+		// which arrives here indistinguishable -- a sentinel that means two
+		// things. And a RawBlock, this package's usual answer for a construct
+		// richdoc cannot represent, would make the code VANISH for every consumer
+		// that is not reST. A spelling change is the smallest of the three.
 		return []richdoc.Block{richdoc.CodeBlock{Language: codeLanguage(el), Text: codeText(el)}}
 	case doctree.TagMathBlock:
 		// docutils/rst v0.52.0+ (".. math::") — richdoc has a REAL
@@ -1189,7 +1213,32 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		return c.convertReference(el)
 	case doctree.TagSubstitutionRef:
 		return c.convertSubstitutionRef(el)
-	case doctree.TagFootnoteReference, doctree.TagCitationReference:
+	case doctree.TagCitationReference:
+		// A CITATION, not a footnote. reST has both and they are different
+		// things: a footnote is a note at the foot of the page, and a citation
+		// names a bibliographic entry -- "[CIT2002]_" -- which is what a reader
+		// sees and what richdoc.CrossRef with RefCite already models (the write
+		// side emits "[target]_" for it and always has).
+		//
+		// Inlining a citation as a richdoc.Footnote threw the LABEL away:
+		// "[CIT2002]_" came back as "[1]_" and ".. [CIT2002]" as ".. [1]", so
+		// the document showed a number where the author wrote a key. 15 of the
+		// 1564 real-world files.
+		if name := el.Attr("refname"); name != "" {
+			// The reference's own TEXT, not its refname: docutils NORMALISES a
+			// name to lower case for matching, so "[CIT2002]_" carries
+			// refname="cit2002" while the text is what the author typed and
+			// what the definition's own <label> keeps. Writing the refname
+			// still resolves -- reST names are case-insensitive -- but shows
+			// "cit2002" where the document says "CIT2002".
+			target := strings.TrimSpace(doctree.AsText(el))
+			if target == "" {
+				target = name
+			}
+			return []richdoc.Inline{richdoc.CrossRef{Target: target, Kind: richdoc.RefCite}}
+		}
+		return c.convertNoteRef(el)
+	case doctree.TagFootnoteReference:
 		return c.convertNoteRef(el)
 	default:
 		return c.convertInlines(el.Children)

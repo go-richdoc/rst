@@ -208,13 +208,24 @@ func TestParse(t *testing.T) {
 			).Doc(),
 		},
 		{
-			"citation reference inlines the same way as a footnote",
+			// A CITATION is not a footnote, and it used to be converted as one:
+			// the body was inlined as a richdoc.Note and the LABEL thrown away,
+			// so "[CIT2002]_" came back as "[1]_" and ".. [CIT2002]" as
+			// ".. [1]" -- a number where the author wrote a key. richdoc.CrossRef
+			// with RefCite is what models it (the write side has always emitted
+			// "[target]_" for that), and the definition stays a block of its own,
+			// which is the only place the body can now live.
+			//
+			// The target is the reference's own TEXT, not its refname: docutils
+			// normalises a name to lower case for matching, so the refname is
+			// "cit2002" while the document says "CIT2002".
+			"citation reference is a CrossRef carrying its key",
 			"See [CIT2002]_ here.\n\n.. [CIT2002] The citation.\n",
 			richdoc.New().P(
 				richdoc.Txt("See "),
-				richdoc.Note(richdoc.Paragraph{Inlines: []richdoc.Inline{richdoc.Txt("The citation.")}}),
+				richdoc.CrossRef{Target: "CIT2002", Kind: richdoc.RefCite},
 				richdoc.Txt(" here."),
-			).Doc(),
+			).Add(richdoc.RawBlock{Format: "rst", Text: ".. [CIT2002] The citation."}).Doc(),
 		},
 		{
 			"an auto footnote reference now resolves via docutils/rst v0.7.0's own auto-numbering (synthetic name + matching refname)",
@@ -1106,7 +1117,10 @@ func TestFootnoteDefinitionDroppedRegardlessOfOrder(t *testing.T) {
 	}{
 		{"definition before reference", ".. [#a] the body\n\nRef [#a]_ here.\n", 1, 1},
 		{"definition after reference", "Ref [#a]_ here.\n\n.. [#a] the body\n", 1, 1},
-		{"citation, definition first", ".. [cit] the body\n\nRef [cit]_ here.\n", 1, 1},
+		// A citation keeps its definition as a block of its own now (its
+		// reference carries only the key), so the document has TWO blocks and
+		// the body still appears exactly once.
+		{"citation, definition first", ".. [cit] the body\n\nRef [cit]_ here.\n", 2, 1},
 		{"orphan definition survives", ".. [#a] the body\n\nNo reference at all.\n", 2, 1},
 	}
 	for _, tc := range cases {
