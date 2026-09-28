@@ -611,13 +611,13 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 	case doctree.TagSection:
 		return c.convertSection(el, level)
 	case doctree.TagParagraph:
-		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines(el.Children)}}
+		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines(el.Children), Classes: classesOf(el)}}
 	case doctree.TagBulletList:
 		return []richdoc.Block{c.convertList(el, false)}
 	case doctree.TagEnumeratedList:
 		return []richdoc.Block{c.convertList(el, true)}
 	case doctree.TagBlockQuote:
-		return []richdoc.Block{richdoc.BlockQuote{Blocks: c.convertBlocks(el.Children, level)}}
+		return []richdoc.Block{richdoc.BlockQuote{Blocks: c.convertBlocks(el.Children, level), Classes: classesOf(el)}}
 	case doctree.TagAttribution:
 		// docutils/rst v0.19.0+ — a block quote's trailing "-- text"
 		// attribution. Its children are bare INLINE nodes (parseInline's
@@ -628,7 +628,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// richdoc has no dedicated attribution concept, so this maps to a
 		// plain Paragraph, the same non-lossy generic-node choice already
 		// used for problematic/system_message elsewhere in this file.
-		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines(el.Children)}}
+		return []richdoc.Block{richdoc.Paragraph{Inlines: c.convertInlines(el.Children), Classes: classesOf(el)}}
 	case doctree.TagTransition:
 		return []richdoc.Block{richdoc.ThematicBreak{}}
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock:
@@ -648,7 +648,7 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// things. And a RawBlock, this package's usual answer for a construct
 		// richdoc cannot represent, would make the code VANISH for every consumer
 		// that is not reST. A spelling change is the smallest of the three.
-		return []richdoc.Block{richdoc.CodeBlock{Language: codeLanguage(el), Text: codeText(el)}}
+		return []richdoc.Block{richdoc.CodeBlock{Language: codeLanguage(el), Text: codeText(el), Classes: authorClasses(el)}}
 	case doctree.TagMathBlock:
 		// docutils/rst v0.52.0+ (".. math::") — richdoc has a REAL
 		// block-math type of its own, so this maps straight onto it
@@ -948,7 +948,7 @@ func (c *converter) convertList(el *doctree.Element, ordered bool) richdoc.List 
 			start = n
 		}
 	}
-	l := richdoc.List{Ordered: ordered, Start: start, Tight: true}
+	l := richdoc.List{Ordered: ordered, Start: start, Tight: true, Classes: classesOf(el)}
 	for _, ch := range el.Children {
 		item, ok := ch.(*doctree.Element)
 		if !ok || item.Tag != doctree.TagListItem {
@@ -1009,6 +1009,12 @@ func (c *converter) convertTable(el *doctree.Element) richdoc.Table {
 			}
 		}
 	}
+	// The DERIVED classes are filtered here, on the way IN, not on the way out.
+	// Filtering them in the writer left the model holding "colwidths-given" while
+	// the reconstruction omitted it, so the next parse had no class and the round
+	// trip was not a fixed point -- 13 files, all of them tables. A class docutils
+	// worked out for itself is not part of the document.
+	t.Classes = authorTableClasses(classesOf(el))
 	return t
 }
 
@@ -1166,7 +1172,7 @@ func (c *converter) convertInlineElement(el *doctree.Element) []richdoc.Inline {
 		// own TagImage case below, a standalone block-level image
 		// wrapped in a single-inline Paragraph -- richdoc already has a
 		// real Image inline type for exactly this.
-		return []richdoc.Inline{richdoc.Image{URL: el.Attr("uri"), Alt: el.Attr("alt")}}
+		return []richdoc.Inline{imageFrom(el)}
 	case doctree.TagRaw:
 		// docutils/rst v0.16.0+'s inline raw role (".. role:: x(raw)"),
 		// the inline counterpart of the block-level TagRaw case below —
@@ -1458,4 +1464,79 @@ func needsTargetQuotes(name string) bool {
 		return true
 	}
 	return false
+}
+
+// imageFrom reads every attribute richdoc.Image can now hold (v0.4.0). Before
+// those fields existed, ":align:", ":width:", ":height:", ":scale:" and
+// ":class:" reached this converter with nowhere to go: 43 of the 79 standalone
+// images in the 1564-document corpus carry at least one, in 18 files.
+//
+// The values go across AS WRITTEN, with their units. docutils has already
+// validated the spelling (rst.formatMeasure/formatPercentage) and normalised a
+// class name through nodes.make_id, so nothing here has to parse or canonicalise
+// them -- and a converter for a format that sizes images differently needs the
+// unit, not a number this package guessed at.
+func imageFrom(el *doctree.Element) richdoc.Image {
+	img := richdoc.Image{
+		URL:     el.Attr("uri"),
+		Alt:     el.Attr("alt"),
+		Width:   el.Attr("width"),
+		Height:  el.Attr("height"),
+		Classes: classesOf(el),
+		Align:   alignmentOf(el.Attr("align")),
+	}
+	// ":scale: 50" arrives as "50": a PERCENTAGE, which is why richdoc.Image
+	// holds it as an int and not beside Width as a length.
+	if n, err := strconv.Atoi(strings.TrimSuffix(el.Attr("scale"), "%")); err == nil {
+		img.Scale = n
+	}
+	return img
+}
+
+// classesOf splits a doctree "class" attribute into richdoc's own Classes slice.
+// docutils stores them space-separated, each already put through nodes.make_id
+// by class_option (read directly), so they are written back verbatim and reparse
+// to the same list.
+func classesOf(el *doctree.Element) []string {
+	if c := strings.Fields(el.Attr("class")); len(c) > 0 {
+		return c
+	}
+	return nil
+}
+
+// alignmentOf maps reST's image alignment onto richdoc's own enum. Only the three
+// horizontal values have a counterpart: "top", "middle" and "bottom" place an
+// INLINE image against the text line, which richdoc's Alignment -- a column
+// alignment borrowed for this -- does not express, so they leave it at
+// AlignDefault rather than being bent into one of the three.
+func alignmentOf(v string) richdoc.Alignment {
+	switch v {
+	case "left":
+		return richdoc.AlignLeft
+	case "center":
+		return richdoc.AlignCenter
+	case "right":
+		return richdoc.AlignRight
+	}
+	return richdoc.AlignDefault
+}
+
+// authorClasses is classesOf minus the classes docutils gave the node ITSELF. A
+// literal_block from ".. code:: python" carries class="code python", which the
+// writer reproduces by writing that directive back -- carrying it in Classes too
+// would write it a second time, as ":class: code python", and the next parse would
+// have it twice.
+func authorClasses(el *doctree.Element) []string {
+	var out []string
+	for i, c := range strings.Fields(el.Attr("class")) {
+		if i == 0 && c == "code" {
+			continue
+		}
+		// The language follows "code" and is already in CodeBlock.Language.
+		if i == 1 && c == codeLanguage(el) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
 }

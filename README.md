@@ -614,6 +614,52 @@ cheapest, and that position is its choice rather than the document's. The diff i
 sound; attributing a `+` line to the construct printed beside it is not. Checking
 the source directly is what settled both.
 
+### Carrying them (richdoc v0.4.0)
+
+richdoc grew the fields, so this converter now carries them. `Classes []string` on
+`Paragraph`, `List`, `BlockQuote`, `Table`, `CodeBlock`, `Code` and `Image`;
+`Width`, `Height`, `Scale` and `Align` on `Image`.
+
+The writer uses the CONTENT form of `.. class::` — the directive with the block
+indented under it — and not the bare form. Asked about both, the reference applies a
+bare `.. class::` to the next element through a transform (`misc.ClassAttribute`)
+that this project's parser does not run: the bare form leaves a `<pending>` and the
+paragraph gets no class at all, while the content form gives
+`<paragraph class="foo bar">` in both parsers.
+
+Three things had to be decided rather than assumed, and each was measured.
+
+**A block quote is not wrapped.** It is written by INDENTING its content, and
+indenting that again under `.. class::` loses the quote: the body lands at six
+spaces and reparses as one PARAGRAPH carrying the class. Its own directive carries
+it instead — and every block-quote class in the corpus is one of docutils' three
+(6 `epigraph`, 1 `pull-quote`).
+
+**A derived class never enters the model.** `colwidths-given` comes from
+`.. table::`'s `:widths:` option and `colwidths-auto` from its absence — a plain
+grid table carries neither — so 70 of the corpus's 83 table classes are docutils'
+own working-out. Filtering them in the WRITER was the first attempt and cost 13
+files' round trip: the model held `colwidths-given`, the reconstruction omitted it,
+and the next parse had no class. A filter on the way IN is a fixed point; one on
+the way out is not.
+
+**A literal block's language travels with it.** The class work uncovered a loss
+next to it: `rawChildSource` wrote a bare `::` for every literal block, so a
+`.. code:: python` nested inside a list item, an admonition or a definition came
+back unlabelled — 16 files, invisible while the class was being subtracted from the
+comparison.
+
+| | before | after |
+|---|---|---|
+| source-vs-output equivalence | 1358 / 1564 | **1395 / 1564** |
+| round-trip to the same tree | 1471 / 1564 | 1471 / 1564 |
+| diagnostics the reconstruction adds | 0 | 0 |
+
+What still has nowhere to go: an INLINE literal's class, which comes from a custom
+role and would need the role's own definition to write back; a class on a hyperlink
+target, which this converter drops as bookkeeping; and the structural table parts
+(`tgroup`, `entry`, `row`) richdoc models without an identity of their own.
+
 
 ## Round-trip
 
