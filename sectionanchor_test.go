@@ -495,17 +495,24 @@ func TestDiagnosticsNeverLeakIntoARawBlock(t *testing.T) {
 //
 // Four converted documents (sphinx's extdev/appapi and three cpp-domain
 // test roots) carried a stray ":no-index:" line as a field list before
-// this; the classes go on the content, which for a converter means they
-// vanish, and what is left is the content alone.
+// this. The classes go on the CONTENT, which used to mean they vanished --
+// richdoc had nowhere to put one -- and since richdoc v0.4.0 the paragraph
+// carries them, so what is left is the content plus its classes.
 func TestClassArgumentBlockIsNotAFieldList(t *testing.T) {
 	const src = ".. class:: Sphinx\n   :no-index:\n\n   The method does a thing.\n"
 	doc, err := Parse([]byte(src))
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	want := []richdoc.Block{richdoc.Paragraph{Inlines: []richdoc.Inline{
-		richdoc.Text{Value: "The method does a thing."},
-	}}}
+	want := []richdoc.Block{richdoc.Paragraph{
+		Inlines: []richdoc.Inline{richdoc.Text{Value: "The method does a thing."}},
+		// BOTH names: ".. class::" takes one argument LINE, so ":no-index:"
+		// folded into it and class_option normalised it to "no-index". The
+		// reference answers `<paragraph classes="sphinx no-index">` for this
+		// exact input, which is what makes the stray line harmless rather than
+		// a field list.
+		Classes: []string{"sphinx", "no-index"},
+	}}
 	if !reflect.DeepEqual(doc.Blocks, want) {
 		t.Errorf("Parse(%q) blocks =\n%#v\nwant:\n%#v", src, doc.Blocks, want)
 	}

@@ -939,6 +939,21 @@ func rawChildSource(n doctree.Node) string {
 	case doctree.TagLiteralBlock:
 		// Verbatim on purpose: docutils does not parse markup inside a
 		// literal block, so its text IS its source.
+		//
+		// The LANGUAGE has to come with it. This path wrote a bare "::" for
+		// every one, so a ".. code:: python" nested inside a list item, an
+		// admonition or a definition came back as an unlabelled literal block --
+		// 16 corpus files, and invisible while the class was being subtracted
+		// from the comparison. writeCodeBlock's own rule is reused rather than
+		// restated: directive when there is something to carry, "::" when there
+		// is not.
+		if lang := codeLanguage(el); lang != "" || len(authorClasses(el)) > 0 {
+			var opts []string
+			if cs := authorClasses(el); len(cs) > 0 {
+				opts = append(opts, ":class: "+strings.Join(cs, " "))
+			}
+			return rawDirectiveSource(".. code:: "+lang, opts, indentBlock(doctree.AsText(el)))
+		}
 		return "::\n\n" + indentBlock(doctree.AsText(el))
 	case doctree.TagBlockQuote:
 		return indentBlock(rawChildren(el))

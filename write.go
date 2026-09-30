@@ -200,7 +200,85 @@ func (w *writer) writeBlocks(blocks []richdoc.Block) string {
 // headings survive a round-trip through docutils/rst's own first-seen-style
 // ordering, matching how [github.com/go-richdoc/markdown]'s Write always
 // emits ATX '#' rather than setext underlines).
+// writeBlock renders one block, wrapping it in a ".. class::" directive when it
+// carries classes richdoc v0.4.0 can now hold.
+//
+// The CONTENT form (".. class:: names" and the block indented under it), not the
+// bare form: docutils applies a bare ".. class::" to the NEXT element through a
+// transform (misc.ClassAttribute), and this project's parser does not run that
+// transform -- asked for the bare form it leaves a <pending> and the paragraph
+// gets no class at all, where the content form gives
+// `<paragraph class="foo bar">` in both parsers. Checked against the reference on
+// both spellings before choosing.
+//
+// A CodeBlock is excluded because ".. code::" carries its own ":class:" option,
+// and an Image because ".. image::" does; wrapping either would write the class
+// twice.
 func (w *writer) writeBlock(b richdoc.Block, level int) string {
+	body := w.writeBlockBody(b, level)
+	if cs := blockClasses(b); len(cs) > 0 {
+		return ".. class:: " + strings.Join(cs, " ") + "\n\n" + indentBlock(body)
+	}
+	return body
+}
+
+// blockClasses returns the classes a block carries, or nil for one whose own
+// reconstruction already writes them.
+func blockClasses(b richdoc.Block) []string {
+	switch n := b.(type) {
+	case richdoc.Paragraph:
+		return n.Classes
+	case richdoc.List:
+		return n.Classes
+	case richdoc.BlockQuote:
+		// NOT wrapped. A block quote is written by INDENTING its content, and
+		// indenting that again under a directive loses the quote: ".. class::
+		// epigraph" with a doubly-indented body reparses as a PARAGRAPH with the
+		// class, the quote gone. Its own directive carries the class instead --
+		// see quoteDirective -- and every block-quote class in the 1564-document
+		// corpus is one of those three (6 epigraph, 1 pull-quote).
+		return nil
+	case richdoc.Table:
+		// Already filtered on the way in; see convertTable.
+		return n.Classes
+	}
+	return nil
+}
+
+// quoteDirective is the directive that produced a classed block quote, or "" for
+// one this package cannot name. docutils' epigraph, highlights and pull-quote
+// directives all yield a <block_quote> carrying their own name as its class, so
+// writing the directive back is both faithful and the only spelling that keeps
+// the quote.
+func quoteDirective(classes []string) string {
+	if len(classes) != 1 {
+		return ""
+	}
+	switch classes[0] {
+	case "epigraph", "highlights", "pull-quote":
+		return classes[0]
+	}
+	return ""
+}
+
+// authorTableClasses drops the classes docutils DERIVES for a table from its own
+// column widths. "colwidths-given" comes from ".. table::"'s ":widths:" option
+// and "colwidths-auto" from its absence (checked: a plain grid table carries
+// neither) -- 70 of the corpus's 83 table classes are one of the two, and writing
+// one back as an explicit ":class:" would state as the author's what docutils
+// worked out for itself.
+func authorTableClasses(classes []string) []string {
+	var out []string
+	for _, c := range classes {
+		if c == "colwidths-given" || c == "colwidths-auto" {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+func (w *writer) writeBlockBody(b richdoc.Block, level int) string {
 	switch n := b.(type) {
 	case richdoc.Heading:
 		return w.writeHeading(n)
@@ -230,6 +308,13 @@ func (w *writer) writeBlock(b richdoc.Block, level int) string {
 	case richdoc.CodeBlock:
 		return writeCodeBlock(n)
 	case richdoc.BlockQuote:
+		if d := quoteDirective(n.Classes); d != "" {
+			// NOT indentBlock: rawDirectiveSource indents the content itself,
+			// and the directive's body IS the quote -- indenting twice put the
+			// text at six spaces, which reparses as one paragraph with the class
+			// and no quote, the very loss this branch exists to avoid.
+			return rawDirectiveSource(".. "+d+"::", nil, w.writeBlocks(n.Blocks))
+		}
 		return indentBlock(w.writeBlocks(n.Blocks))
 	case richdoc.Table:
 		return w.writeTable(n)
@@ -404,6 +489,15 @@ func writeCodeBlock(c richdoc.CodeBlock) string {
 	// directive that carries one; "::" stays the shape when there is
 	// nothing to carry, since the directive form is noisier and a
 	// languageless block gains nothing from it.
+	if len(c.Classes) > 0 {
+		// ".. code::" carries its own ":class:", and it is the only way to write
+		// a class onto a literal block: wrapping it in ".. class::" would put
+		// the class on the block AND leave "::" inside, which reparses with the
+		// class twice. A languageless block still needs the directive here,
+		// since "::" has no options at all.
+		opts := []string{":class: " + strings.Join(c.Classes, " ")}
+		return rawDirectiveSource(".. code:: "+c.Language, opts, indentBlock(c.Text))
+	}
 	if c.Language == "" {
 		return "::\n\n" + indentBlock(c.Text)
 	}
@@ -787,8 +881,41 @@ func writeImageBlock(inlines []richdoc.Inline) (string, bool) {
 	if img.Alt != "" {
 		options = append(options, ":alt: "+img.Alt)
 	}
+	// The options richdoc gained in v0.4.0. Their ORDER follows docutils' own
+	// option_spec listing rather than the struct's field order, so a
+	// reconstruction reads like the sources this corpus is made of.
+	if img.Height != "" {
+		options = append(options, ":height: "+img.Height)
+	}
+	if img.Width != "" {
+		options = append(options, ":width: "+img.Width)
+	}
+	if img.Scale != 0 {
+		options = append(options, ":scale: "+strconv.Itoa(img.Scale))
+	}
+	if a := alignName(img.Align); a != "" {
+		options = append(options, ":align: "+a)
+	}
+	if len(img.Classes) > 0 {
+		options = append(options, ":class: "+strings.Join(img.Classes, " "))
+	}
 	if target != "" {
 		options = append(options, ":target: "+target)
 	}
 	return rawDirectiveSource(".. image:: "+img.URL, options, ""), true
+}
+
+// alignName is the reST spelling of a richdoc.Alignment, or "" for
+// AlignDefault -- which means "not given" and must not be written as an option
+// at all, since ":align:" has no "default" value to name.
+func alignName(a richdoc.Alignment) string {
+	switch a {
+	case richdoc.AlignLeft:
+		return "left"
+	case richdoc.AlignCenter:
+		return "center"
+	case richdoc.AlignRight:
+		return "right"
+	}
+	return ""
 }
