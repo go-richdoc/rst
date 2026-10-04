@@ -1055,6 +1055,49 @@ in the TAG census and in the round trip, not in the first-difference measure. On
 probe moving while another holds still is what tells you which part of the document
 changed.
 
+#### What is left, measured rather than guessed
+
+The four tags left in the loss list after this round were read ONE EXAMPLE AT A TIME
+in the first draft of this section, and then counted. Both numbers are below, because
+the counting changed the answer twice.
+
+**`literal`, 45 nodes in 4 files — 44 of them inside a `<substitution_definition>`.**
+That is the substitution boundary's own shadow: this converter expands a `|name|`
+reference at its use and drops the definition, so everything inside the definition —
+inline literals, emphasis, a reference — goes with it. Not a defect of its own, and
+the probe says so by counting ancestors rather than by inspection. The 45th is in
+PEP 249 and is a cell's inline literal flattened with its row.
+
+**`block_quote`, 8 nodes in 4 files — a block quote the next parse ABSORBS.** The
+shape is an indented block after a list item, indented LESS than the item's own text:
+
+    1. Skip all tests:
+
+      .. code-block:: python
+
+            x = 1
+
+    2. Next.
+
+docutils ends the list there, makes the code block a `<block_quote>` SIBLING of it,
+and starts a second list at 2 — which this converter carries faithfully, as a `List`,
+a `BlockQuote` and a `List{Start: 2}`. Writing it back puts the quote's content at the
+item's own indent, where the next parse reads it as part of item 1: one list of two
+items, no block quote. Expressing the original would mean emitting an empty comment
+(`..`) to break the list, which ADDS a node to the tree to preserve one; the
+reconstruction is what a reader sees either way, so this is recorded rather than
+fixed.
+
+**`attribution`, 14 nodes in 7 files.** A block quote's `-- Author` line has no field
+in `richdoc.BlockQuote`, so it comes back as a paragraph inside the quote. This is the
+one genuine model gap left in the census, and it is NOT worth a model change at this
+size: `Classes` was 187 attributes in 57 files and `Cell.Blocks` 244 nodes in 24, both
+an order of magnitude bigger, and every converter in the org pays for a new field.
+Recorded with its number so the next person can weigh it with better data.
+
+**`reference`, 13 nodes in 9 files**, is `destprobe`'s remaining 6 files plus the
+substitution shadow, both already documented above.
+
 #### What the fallback still has no case for
 
 `tagprobe`'s list after this round, with the boundaries named: `target` (4344,
