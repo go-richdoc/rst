@@ -1094,9 +1094,49 @@ func (c *converter) cellBlockInlines(n doctree.Node) []richdoc.Inline {
 		return c.cellInlines(el.Children)
 	case doctree.TagLiteralBlock, doctree.TagDoctestBlock, doctree.TagLineBlock:
 		return []richdoc.Inline{richdoc.Code{Value: codeText(el)}}
+	case doctree.TagSystemMessage:
+		// A cell is flattened to INLINES, so a <system_message> in one reached
+		// the default below and came back as its own TEXT: the parser's
+		// complaint printed into the table, in a sentence no author wrote and
+		// every reader sees. convertBlockNode's TagSystemMessage case -- the one
+		// that drops diagnostics -- is never consulted on this path, which is
+		// the same blind spot rawSource had (see withoutDiagnostics) in a third
+		// place.
+		//
+		// The reference removes a message below its report level with a
+		// TRANSFORM, universal.FilterMessages, not at parse time: asked for the
+		// doctree of a simple table whose cell holds "??", docutils' PARSER
+		// attaches the INFO "Unexpected possible title overline or transition."
+		// and the published document does not have it. So the message really is
+		// in the tree this converter reads, and dropping it is what the
+		// reference does too.
+		return c.cellMessageInlines(el)
 	default:
 		return c.convertInlineElement(el)
 	}
+}
+
+// cellMessageInlines applies convertBlockNode's diagnostic policy inside a table
+// cell: keep nothing by default, keep everything when the caller asked for the
+// diagnostics, and keep the quoted source of a construct docutils REFUSED (level
+// 3 and above), which is the author's text and not commentary.
+func (c *converter) cellMessageInlines(el *doctree.Element) []richdoc.Inline {
+	if c.opts.KeepDiagnostics {
+		return c.cellInlines(el.Children)
+	}
+	if lvl := el.Attr("level"); lvl != "" && lvl < "3" {
+		return nil
+	}
+	var kept []doctree.Node
+	for _, ch := range el.Children {
+		if e, ok := ch.(*doctree.Element); ok && e.Tag == doctree.TagLiteralBlock {
+			kept = append(kept, e)
+		}
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return c.cellInlines(kept)
 }
 
 // extraSpan reads a grid-table entry's morecols/morerows attribute — the
