@@ -4,6 +4,7 @@
 package rst
 
 import (
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -574,7 +575,7 @@ func rawDefinitionList(el *doctree.Element) string {
 			}
 			switch ie.Tag {
 			case doctree.TagTerm:
-				term = inlineSourceOf(ie)
+				term = escapeClassifierDelimiter(inlineSourceOf(ie))
 			case doctree.TagClassifier:
 				term += " : " + inlineSourceOf(ie)
 			case doctree.TagDefinition:
@@ -584,6 +585,30 @@ func rawDefinitionList(el *doctree.Element) string {
 		parts = append(parts, hangUnder(term+"\n    ", def, "    "))
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// reClassifierDelimiter is the reference's own `classifier_delimiter`,
+// `re.compile(' +: +')` (states.Text), which splits a definition-list term into a
+// term and its classifiers.
+var reClassifierDelimiter = regexp.MustCompile(` +: +`)
+
+// escapeClassifierDelimiter escapes a colon inside a TERM's own text, so a term that
+// contains " : " does not come back split into a term and a classifier.
+//
+// PEP 362 writes "* return_annotation \: object" for exactly this reason: escaped,
+// the colon stays part of the term. The escape works because docutils parses the
+// term's inline content FIRST, which turns "\:" into NUL+":" -- and the delimiter
+// pattern " +: +" cannot match across the NUL. Writing the term back with a bare
+// colon therefore produced <term>return_annotation</term> plus
+// <classifier>object</classifier> where the source had one term.
+//
+// Only the term needs it. A classifier cannot contain the delimiter: if it did, the
+// parse that produced it would have split there.
+func escapeClassifierDelimiter(term string) string {
+	return reClassifierDelimiter.ReplaceAllStringFunc(term, func(m string) string {
+		i := strings.IndexByte(m, ':')
+		return m[:i] + `\:` + m[i+1:]
+	})
 }
 
 // rawOptionList reconstructs a man-page-style option list ("-f, --file=ARG

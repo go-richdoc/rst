@@ -1132,7 +1132,7 @@ Two measurements over the 1564-file real-world corpus in
 | measure | what it asks | state |
 |---|---|---|
 | `rtprobe` | does `Parse(Write(d))` give back `d`? | 1489 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1440 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1451 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip
@@ -1225,6 +1225,35 @@ whatever renders the model; neither this package nor the reference filters one.
 
 A `RawBlock` is verbatim by definition. One that arrives from this package's own parse
 came from the document; one a caller constructs is the caller's responsibility.
+
+### The term that grew a classifier
+
+reST reads `term : classifier` as two things, and an author who wants the colon INSIDE
+the term escapes it. PEP 362 writes
+
+    * return_annotation \: object
+          The "return" annotation for the function.
+
+and the escape works for a reason worth knowing: docutils parses a term's inline
+content FIRST, which turns `\:` into NUL + `:`, and the delimiter pattern
+`' +: +'` (`states.Text.classifier_delimiter`) cannot match across the NUL.
+
+This converter rebuilds a definition list as reST source and wrote the term's colon
+BARE, so the next parse split it — `<term>return_annotation</term>` plus
+`<classifier>object</classifier>` where the source had one term. Measured: **8 terms in
+1 file, out of 1030 definition-list terms** in the corpus.
+
+**Neither the round trip nor `PlainText` could see it**, which is the part worth
+keeping. The list comes back as a `RawBlock`, so `PlainText` contributes nothing for
+it; and a split term rejoined with `" : "` produces the SAME raw text, so
+`Parse(Write(d))` equals `d`. Only `fidprobe`, which compares the two DOCTREES, saw
+the difference — and the test therefore asserts on a docutils re-parse (zero
+`<classifier>` for the escaped form, exactly one for a real one) rather than on the
+model.
+
+`fidprobe` 1450 → **1451**; the round trip holds at 1489 with an identical lossy set,
+for the same reason.
+
 
 ## Toolchain
 
