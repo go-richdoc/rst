@@ -970,6 +970,64 @@ A probe that answers "which of these do I lose" beats nine rounds of finding out
 at a time.
 
 
+### What a cell could not hold (richdoc v0.5.0)
+
+reST's grid tables allow full block content in a cell, and `richdoc.Cell` held
+inlines, so every cell was flattened: a bullet list came back as two paragraphs, a
+literal block as an inline literal, a line block as prose. `richdoc` v0.5.0 added
+`Cell.Blocks` and `Table.Caption`, and this converter now carries both.
+
+What `tagprobe` says the change recovered, by tag, over the 1564-file corpus:
+
+| nodes | files | tag | was |
+|---|---|---|---|
+| 64 | 6 | `list_item` | two paragraphs |
+| 47 + 14 | 2 | `line`, `line_block` | prose |
+| 39 | 9 | `literal_block` | an inline literal |
+| 27 | 9 | `bullet_list` | two paragraphs |
+| 24 | 13 | `title` | nothing — the table's caption |
+| 10 | 1 | `image` | its alt text |
+| 8 + 5 | 2 / 3 | `colspec`, `enumerated_list` | flattened with the rest |
+| 4 + 2 | 2 / 3 | `entry`, `row` | a nested table's own cells |
+
+**244 nodes**, all of them gone from the loss list. `fidprobe` 1430 → **1440**; the
+round trip holds at 1486 with an identical lossy set, which is what it should do —
+those cells were already a fixed point as flattened text and are now a fixed point
+as blocks.
+
+Three things had to be decided rather than assumed.
+
+**`Blocks` is nil for the common case.** A cell holding exactly one paragraph says
+everything it has in `Inlines`, and filling both for every cell would make every
+consumer choose between two spellings of the same content. The rule is "anything a
+paragraph cannot hold": more than one block, or a single block that is not a
+paragraph.
+
+**A cell that carries `Blocks` also carries `Inlines`.** That is richdoc's own
+contract and it is what stops this change from making every converter written
+before v0.5.0 render an empty cell. `TestACellThatCarriesBlocksAlsoCarriesInlines`
+holds it from the producer's side.
+
+**Neither of the flattened path's two treatments applies to blocks.**
+`escapeBlockStart` escapes a first line that LOOKS like a block marker, because
+flattened text beginning `(2)` or `- ` would start a list the author did not write;
+a cell's blocks are real markup, so escaping them would break the very list this
+version keeps. And the newline-to-space collapse exists because a soft wrap in
+flattened text is not meaningful, where in block content every break is. See
+`cellText`.
+
+One test was REPLACED rather than added: `TestACellWithAVerbatimNewlineIsFlattened`
+forced a cell's whole content onto one line, because a newline inside a flattened
+literal read as a block quote and lost the closing delimiter — PEP 307 gained an
+"Inline literal start-string without end-string" INSIDE the cell and PEP 720's
+six-line literal 26 diagnostics. Its stated cost was that one cell cannot be half
+multi-line. With `Cell.Blocks` the literal block is a literal block again, so the
+guard is now `TestALiteralBlockInACellIsALiteralBlock` — and the old guard survives
+as `TestACellWhoseInlinesHoldAVerbatimNewlineIsStillFlattened` for a cell built with
+a multi-line `Code` inline and no `Blocks`, which is what a producer that has not
+moved to v0.5.0 still sends.
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -987,7 +1045,7 @@ Two measurements over the 1564-file real-world corpus in
 | measure | what it asks | state |
 |---|---|---|
 | `rtprobe` | does `Parse(Write(d))` give back `d`? | 1486 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1430 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1440 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip
@@ -1004,7 +1062,9 @@ and each is checked NARROWLY in the probe so a real loss cannot hide behind it:
 - **an enumerated list's STYLE.** `Ordered` and `Start` are recorded; the
   enumerator's kind and punctuation are not, so `a)` comes back `1.`.
 - **a table's column WIDTHS.** The writer lays the table out itself, so every
-  column returns two wider. The column count is preserved.
+  column returns two wider. The column count is preserved. (A cell's block
+  content and a table's caption are no longer in this list: see "What a cell
+  could not hold" above.)
 - ~~**a `:class:`** on a paragraph, an image or anything else~~ — carried since
   richdoc v0.4.0; see "Carrying them" above. What remains uncarried is an INLINE
   literal's class and a class on a hyperlink target.

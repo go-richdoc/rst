@@ -606,7 +606,14 @@ func (w *writer) writeTable(t richdoc.Table) string {
 		b.WriteString(gridRow(rc, widths) + "\n")
 		b.WriteString(border + "\n")
 	}
-	return strings.TrimRight(b.String(), "\n")
+	grid := strings.TrimRight(b.String(), "\n")
+	// A CAPTION is the ".. table::" directive's argument, with the grid as its
+	// content: that is the only spelling reST has for one, and docutils puts it
+	// back as the <title> child this converter reads it from.
+	if len(t.Caption) > 0 {
+		return ".. table:: " + continuationIndent(w.writeInlines(t.Caption), 3) + "\n\n" + indentBlock(grid)
+	}
+	return grid
 }
 
 // spanCell is one cell's rendered text alongside the column span it covers
@@ -733,10 +740,7 @@ func spanCellTexts(w *writer, cells []richdoc.Cell, cols int) []spanCell {
 		// this. Flattening afterwards is what makes escaping the FIRST line
 		// enough: every later line ends up mid-line, where no block marker is
 		// recognised.
-		text := escapeBlockStart(w.writeInlines(c.Inlines))
-		if !cellKeepsItsLines(c.Inlines) {
-			text = strings.ReplaceAll(text, "\n", " ")
-		}
+		text := cellText(w, c)
 		out = append(out, spanCell{text: text, span: span})
 		used += span
 	}
@@ -745,6 +749,33 @@ func spanCellTexts(w *writer, cells []richdoc.Cell, cols int) []spanCell {
 		used++
 	}
 	return out
+}
+
+// cellText renders one cell, from its BLOCKS when richdoc v0.5.0's Cell carries
+// them and from its flattened Inlines when it does not.
+//
+// Neither of the two treatments the inline path needs applies to blocks, and
+// applying either would be wrong:
+//
+//   - escapeBlockStart escapes a first line that LOOKS like a block marker, because
+//     flattened text that begins "(2)" or "- " would start a list the author did
+//     not write. A cell's blocks are real markup, so escaping them would break the
+//     very list this version exists to keep.
+//   - the newline-to-space collapse exists because a soft wrap inside flattened
+//     text is not meaningful. In block content every line break is.
+//
+// The grid writer already lays a multi-line cell out: that is how a cell holding
+// two paragraphs has worked since the blank line between them became a fixed
+// point.
+func cellText(w *writer, c richdoc.Cell) string {
+	if len(c.Blocks) > 0 {
+		return w.writeBlocks(c.Blocks)
+	}
+	text := escapeBlockStart(w.writeInlines(c.Inlines))
+	if !cellKeepsItsLines(c.Inlines) {
+		text = strings.ReplaceAll(text, "\n", " ")
+	}
+	return text
 }
 
 // widenColumns widens each UNSPANNED cell's own column to fit its content —
