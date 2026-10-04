@@ -40,7 +40,6 @@ var blockStarters = []*regexp.Regexp{
 	regexp.MustCompile(`^[-+*\x{2022}\x{2023}\x{2043}](\s|$)`),                // bullet
 	regexp.MustCompile(`^\(?([0-9]+|[a-zA-Z]|[ivxlcdmIVXLCDM]+|#)[.)](\s|$)`), // enumerator
 	regexp.MustCompile(`^\.\.(\s|$)`),                                         // explicit markup
-	regexp.MustCompile(`^:[^:]+:(\s|$)`),                                      // field marker
 	regexp.MustCompile(`^(-{1,2}[a-zA-Z]|/[a-zA-Z])`),                         // option list
 	regexp.MustCompile(`^>>>\s`),                                              // doctest
 	regexp.MustCompile(`^\+[-=]{2,}`),                                         // grid table top
@@ -58,6 +57,52 @@ var blockStarters = []*regexp.Regexp{
 // list, "- Not a bullet either" as a bullet list, ":not: a field" as a field
 // list, and ".. not a directive" as a COMMENT -- invisible in every rendering.
 // The document parsed, so nothing reported any of it.
+// startsWithFieldMarker reports whether a line begins with a FIELD MARKER, and it
+// is a transcription of docutils' own pattern rather than an approximation of it:
+//
+//	field_marker=r':(?![: ])([^:\\]|\\.|:(?!([ `]|$)))*(?<! ):( +|$)'
+//
+// Body.patterns, read for this. Go's regexp is RE2 and has neither lookahead nor
+// lookbehind, so the three assertions are code: the opening colon may not be
+// followed by a colon or a space, a colon INSIDE the name may not be followed by a
+// space, a backtick or the end of the line, and the name may not END in a space.
+//
+// The approximation this replaces -- "^:[^:]+:(\s|$)", a name with no colon in it
+// -- missed the shape that found this: a ":pep:" role docutils refused, written
+// back as escaped text, starts a line with ":pep:\`PEP 522: Allow ...". The colon
+// after "pep" is followed by a BACKSLASH, so it is a legal name character; the one
+// after "522" is followed by a space, so it closes the marker. docutils read the
+// whole first line as a field named "pep:\`PEP 522", put it in the DOCINFO, and
+// warned "Field list ends without a blank line; unexpected unindent." about the
+// second. 6 messages in 2 corpus files, and in both the paragraph was gone.
+func startsWithFieldMarker(s string) bool {
+	if len(s) < 3 || s[0] != ':' || s[1] == ':' || s[1] == ' ' {
+		return false
+	}
+	for i := 1; i < len(s); {
+		if s[i] == ':' {
+			// A closing colon: not preceded by a space, and followed by a
+			// space or the end of the line.
+			if s[i-1] != ' ' && (i+1 == len(s) || s[i+1] == ' ') {
+				return true
+			}
+			// Otherwise it may still be part of the NAME, unless what
+			// follows forbids it.
+			if i+1 == len(s) || s[i+1] == ' ' || s[i+1] == '`' {
+				return false
+			}
+			i++
+			continue
+		}
+		if s[i] == '\\' {
+			i += 2
+			continue
+		}
+		i++
+	}
+	return false
+}
+
 // isAdornment reports a line of four or more of ONE punctuation character,
 // which reST reads as a transition or a section underline. Go's regexp is RE2
 // and has no backreference, so this is code rather than a pattern -- the
@@ -112,7 +157,7 @@ func escapeBlockStart(text string) string {
 			continue
 		}
 		indent := l[:len(l)-len(trimmed)]
-		if isAdornment(trimmed) {
+		if isAdornment(trimmed) || startsWithFieldMarker(trimmed) {
 			lines[i] = indent + `\` + trimmed
 			continue
 		}
