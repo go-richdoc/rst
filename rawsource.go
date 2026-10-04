@@ -120,6 +120,20 @@ func rawDirectiveSource(header string, options []string, content string) string 
 	}
 }
 
+// rawTable rebuilds a <table> as a reST grid table, through the converter and
+// writer this package already has for one.
+func rawTable(el *doctree.Element) string {
+	c := &converter{
+		footnoteDefs:  map[string]*doctree.Element{},
+		substDefs:     map[string]*doctree.Element{},
+		referenced:    map[string]bool{},
+		consumed:      map[string]bool{},
+		headingAnchor: map[string]string{},
+		anchorAlias:   map[string]string{},
+	}
+	return (&writer{}).writeTable(c.convertTable(el))
+}
+
 func rawDirective(el *doctree.Element) string {
 	header := ".. " + el.Attr("name") + "::"
 	if args := el.Attr("arguments"); args != "" {
@@ -1033,6 +1047,18 @@ func rawChildSource(n doctree.Node) string {
 		return rawRubric(el)
 	case doctree.TagContainer:
 		return rawContainer(el)
+	case doctree.TagTable:
+		// A table nested in a construct rebuilt as source -- a simple table inside
+		// a DEFINITION is the shape in the corpus -- fell to AsText, which is a run
+		// of the cells' words with no table around them. PEP 249 put all three of
+		// its tables in definitions and lost every one: 34 entries, 18 rows and 8
+		// colspecs in that file alone.
+		//
+		// Rebuilt through the same path a top-level table takes, rather than a
+		// second grid writer: the throwaway converter/writer pair inlineSourceOf
+		// already uses for the same reason, so a cell's own blocks (richdoc
+		// v0.5.0) and a caption come with it.
+		return rawTable(el)
 	case doctree.TagDirective:
 		// A directive this parser has no implementation for keeps its name, its
 		// argument and its whole block as text, and nothing else here can put
