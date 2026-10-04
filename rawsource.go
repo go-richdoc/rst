@@ -386,33 +386,7 @@ func rawFigure(el *doctree.Element) string {
 	if img != nil {
 		header += " " + img.Attr("uri")
 	}
-	var bodyLines []string
-	if img != nil {
-		if v := img.Attr("alt"); v != "" {
-			bodyLines = append(bodyLines, ":alt: "+v)
-		}
-		if v := img.Attr("height"); v != "" {
-			bodyLines = append(bodyLines, ":height: "+v)
-		}
-		if v := img.Attr("width"); v != "" {
-			bodyLines = append(bodyLines, ":width: "+v)
-		}
-		if v := img.Attr("scale"); v != "" {
-			bodyLines = append(bodyLines, ":scale: "+v)
-		}
-		if v := img.Attr("loading"); v != "" {
-			bodyLines = append(bodyLines, ":loading: "+v)
-		}
-		if v := img.Attr("class"); v != "" {
-			bodyLines = append(bodyLines, ":class: "+v)
-		}
-		if v := img.Attr("name"); v != "" {
-			bodyLines = append(bodyLines, ":name: "+v)
-		}
-	}
-	if target != "" {
-		bodyLines = append(bodyLines, ":target: "+target)
-	}
+	bodyLines := imageOptionLines(img, target)
 	if v := el.Attr("width"); v != "" {
 		bodyLines = append(bodyLines, ":figwidth: "+v)
 	}
@@ -975,6 +949,18 @@ func rawChildSource(n doctree.Node) string {
 	// ".. container::" parses to `The "topic" directive may not be used within
 	// topics or body elements.` -- so the case was dead code, which is what the
 	// coverage floor caught after the corpus had nothing to say either way.
+	case doctree.TagFigure:
+		return rawFigure(el)
+	case doctree.TagImage:
+		return rawImage(el)
+	case doctree.TagReference:
+		// A block-level <reference> wrapping an image is the ":target:" form of
+		// an ".. image::" -- see rawImage. Any other reference at block level is
+		// not something this path produces.
+		if src := rawImage(el); src != "" {
+			return src
+		}
+		return strings.TrimSpace(inlineSourceOf(el))
 	case doctree.TagComment:
 		// Without this the fallback returned the comment's TEXT, so a comment
 		// nested in a container or an admonition stopped being a comment:
@@ -1116,4 +1102,58 @@ func pendingDetail(details, key string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// imageOptionLines builds the ":alt:"/":height:"/… lines an <image> carries, in
+// the reference's own order -- images.Image.option_spec, read from docutils, not
+// alphabetical -- with ":target:" in its place among them rather than appended
+// after. Shared by rawFigure and rawImage so a figure's image and a standalone one
+// cannot drift apart.
+//
+// "align" is in the list for the standalone case: the reference puts a figure's
+// align on the <figure> (rawFigure writes it from there) and a lone image's on the
+// <image> itself, so leaving it out here dropped it.
+func imageOptionLines(img *doctree.Element, target string) []string {
+	var out []string
+	for _, opt := range []string{"alt", "height", "width", "scale", "align", "target", "loading", "class", "name"} {
+		v := ""
+		if opt == "target" {
+			v = target
+		} else if img != nil {
+			v = img.Attr(opt)
+		}
+		if v != "" {
+			out = append(out, ":"+opt+": "+v)
+		}
+	}
+	return out
+}
+
+// rawImage reconstructs ".. image:: URI" for an image nested inside a construct
+// that is itself rebuilt as reST source.
+//
+// rawChildSource had no case for an image OR a figure, so either one nested in a
+// container, an admonition, a list item or a definition fell to its AsText
+// fallback -- and an <image> has no text, so the picture, every option and the
+// ":target:" link all vanished, leaving at most a caption. sphinx's own index page
+// puts three logos in a ".. container::", each a figure with a ":target:", and all
+// three links disappeared; 6 figures and 3 standalone images across 4 corpus files.
+//
+// An image wrapped in a <reference> is the ":target:" form, exactly as in
+// rawFigure: the <image> is then a GRANDCHILD, which is why the caller passes the
+// image it found rather than this reaching for it.
+func rawImage(el *doctree.Element) string {
+	img, target := el, ""
+	if el.Tag == doctree.TagReference {
+		target = rawImageTarget(el)
+		for _, c := range el.Children {
+			if ce, ok := c.(*doctree.Element); ok && ce.Tag == doctree.TagImage {
+				img = ce
+			}
+		}
+	}
+	if img.Tag != doctree.TagImage {
+		return ""
+	}
+	return rawDirectiveSource(".. image:: "+img.Attr("uri"), imageOptionLines(img, target), "")
 }

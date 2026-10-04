@@ -578,6 +578,10 @@ cost more than the loss:
 So the fix belongs in `richdoc`, as fields on `Image`, where every converter would
 get it at once. Recorded here sized and located rather than approximated.
 
+**Since resolved**: richdoc v0.4.0 added those fields and this converter carries
+them — see "Carrying them" below. The paragraph above is kept as the measurement
+that asked for them.
+
 ### What the equivalence number was counting
 
 "1343 equivalent once the NAMED boundaries are removed" was not true to its own
@@ -661,6 +665,70 @@ target, which this converter drops as bookkeeping; and the structural table part
 (`tgroup`, `entry`, `row`) richdoc models without an identity of their own.
 
 
+### The image a container swallowed
+
+`rawChildSource` — the fallback that rebuilds reST for a child of a block this
+converter cannot map natively — had no case for a figure OR an image. Either one
+nested in a `.. container::`, an admonition or a definition fell to its `AsText`
+fallback, and an `<image>` has no text: the picture, every option and the
+`:target:` link all disappeared, leaving at most a caption behind.
+
+sphinx's own index page is the shape that showed it. Three logos sit in a
+`.. container::`, each a figure with a `:target:`, and all three links went
+missing — which the round trip could not see, because a tree with no image in it
+rebuilds to a source with no image in it, consistently. `destprobe`, which asks
+whether a reference still points at the same PLACE, is what named it.
+
+Measured population: **6 figures (3 of them with a `:target:`) and 3 standalone
+images, across 4 files.**
+
+Three details decided the shape of the fix, and the reference settled each one.
+
+The option list is now one function (`imageOptionLines`) serving both the figure
+and the image case, emitting in `images.Image.option_spec`'s own order — `alt`,
+`height`, `width`, `scale`, `align`, `target`, `loading`, `class`, `name`, read
+from docutils rather than guessed, with `:target:` in its place among them instead
+of appended after `:name:`.
+
+Reading that list is what found `:align:`. The reference puts a FIGURE's align on
+the `<figure>` element and a lone IMAGE's on the `<image>` itself, so the option
+list inherited from `rawFigure` — which reads the figure's align from the figure —
+had no `align` in it, and a standalone image's alignment would have been dropped
+by the new path. It is in the shared list now; a figure's image never carries one,
+so the figure case is unaffected.
+
+And a standalone image carrying a `:target:` is not an `<image>` at all: the parser
+wraps it in a `<reference>`, so `rawChildSource` needs a `TagReference` case too,
+falling back to `inlineSourceOf` when the reference wraps no image.
+
+| | before | after |
+|---|---|---|
+| references that no longer point where they did (`destprobe`) | 7 files | **6 files** |
+| source-vs-output equivalence (`fidprobe`) | 1395 / 1564 | **1399 / 1564** |
+| round-trip to the same tree (`rtprobe`) | 1472 / 1564 | 1472 / 1564 |
+| diagnostics the reconstruction adds | 0 | 0 |
+
+The round trip is unchanged and its 92-file lossy SET is identical, checked by
+set-diff rather than by the total: a total that holds still can hide one file
+gained against one file lost.
+
+#### Two boundaries measured and declined
+
+The same investigation found two more causes behind `destprobe`'s list, and both
+were measured and then left alone, which is the part worth recording.
+
+- **A parsed literal's inline markup.** `.. parsed-literal::` keeps its markup
+  live, so a reference inside one is a real link; this converter writes the block
+  as a plain literal and the link becomes text. Population: **3 blocks in 3
+  files, out of 10613 literal blocks in the corpus** — a `richdoc.CodeBlock`
+  holds a string, so carrying it would mean a new node, for three blocks.
+- **An escaped `\::`.** Two files escape the colon that would otherwise open a
+  literal block. The reference AGREES with what this parser does with them, so
+  there is no defect here to fix: one observable consequence, and it is correct.
+  Recorded so the next reading of the probe does not spend the afternoon on it
+  again.
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -677,8 +745,8 @@ Two measurements over the 1564-file real-world corpus in
 
 | measure | what it asks | state |
 |---|---|---|
-| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1374 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1310 of 1564 equivalent once the boundaries below are removed |
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1472 of 1564 |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1399 of 1564 equivalent once the boundaries below are removed |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip
@@ -696,8 +764,9 @@ and each is checked NARROWLY in the probe so a real loss cannot hide behind it:
   enumerator's kind and punctuation are not, so `a)` comes back `1.`.
 - **a table's column WIDTHS.** The writer lays the table out itself, so every
   column returns two wider. The column count is preserved.
-- **a `:class:`** on a paragraph, an image or anything else: no richdoc node has
-  one.
+- ~~**a `:class:`** on a paragraph, an image or anything else~~ — carried since
+  richdoc v0.4.0; see "Carrying them" above. What remains uncarried is an INLINE
+  literal's class and a class on a hyperlink target.
 - **`:number-lines:`** on a code block: no flag for it. The generated numbers are
   dropped rather than folded into the code, which is the part that matters.
 - **a `.. code::` with no language**, which is `CodeBlock{Language: ""}` exactly
@@ -714,7 +783,7 @@ and each is checked NARROWLY in the probe so a real loss cannot hide behind it:
 ## Testing
 
 `go test ./...`. `go vet ./...` and `gofmt -l .` are clean; CI enforces a
-95% coverage floor rather than 100% — see the comment in
+94% coverage floor rather than 100% — see the comment in
 `.github/workflows/ci.yml` for why this package's coverage bar differs from
 its sibling converters'.
 
