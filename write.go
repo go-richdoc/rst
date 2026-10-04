@@ -369,8 +369,25 @@ func (w *writer) writeHeading(h richdoc.Heading) string {
 	// its title line ("column_width(title) > len(underline)", states.py); a
 	// longer one is perfectly legal. So underlining the rendered line costs
 	// nothing and keeps the markup.
-	text := w.writeInlines(h.Inlines)
-	plain := writeInlinesPlain(h.Inlines)
+	// escapeBlockStart, for the same reason a paragraph gets it and with a
+	// sharper consequence. A title line is still the FIRST LINE OF A BLOCK, and
+	// reST tries explicit markup before it tries a title: a heading whose text
+	// begins ".. include:: /etc/passwd" was written out verbatim and read back as
+	// a DIRECTIVE, with the underline becoming a transition. Converting an
+	// untrusted Markdown document ("# <b>.. include:: /etc/passwd</b>", whose
+	// inline HTML this package drops while keeping its text) therefore produced
+	// reST that makes a docutils parse read an arbitrary file -- demonstrated
+	// against the reference, which inlined that file's contents.
+	//
+	// A probe over every position a document can hold text (injectprobe, beside
+	// the corpus) says this was the ONLY one: a paragraph, a list item, a quote,
+	// a cell, a caption, a footnote body, a link's text and an image's alt were
+	// all escaped already.
+	//
+	// The escape is applied BEFORE the underline is measured, so the underline
+	// still cannot be shorter than its title line.
+	text := escapeBlockStart(w.writeInlines(h.Inlines))
+	plain := escapeBlockStart(writeInlinesPlain(h.Inlines))
 	if strings.ContainsAny(text, "\n") {
 		// Nothing inline should render a newline, but a title that did
 		// would break its own underline: fall back rather than emit
