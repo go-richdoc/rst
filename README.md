@@ -1226,12 +1226,26 @@ whatever renders the model; neither this package nor the reference filters one.
 A `RawBlock` is verbatim by definition. One that arrives from this package's own parse
 came from the document; one a caller constructs is the caller's responsibility.
 
+## Toolchain
+
+Requires **Go 1.27.1**, the version the CI workflow pins. The module asked for 1.26.4
+until now while CI already ran 1.27.1, and the difference decides two things:
+
+- 1.27 counts statements more finely, so **a coverage figure from an older toolchain is
+  an upper bound rather than a measurement**. This package reads 94.5% under 1.26.4 and
+  **95.1% under 1.27.1** — the same tests, a different denominator. Every figure in this
+  README is a 1.27.1 one.
+- 1.27's `gofmt` reindents a composite literal inside a multi-value return, and an older
+  local `gofmt` reports a tree CI will reject as clean. Checked with 1.27.1's: nothing
+  to reformat.
+
 ## Testing
 
 `go test ./...`. `go vet ./...` and `gofmt -l .` are clean; CI enforces a
 94% coverage floor rather than 100% — see the comment in
 `.github/workflows/ci.yml` for why this package's coverage bar differs from
-its sibling converters'.
+its sibling converters'. The floor has not moved: what moved is the measurement,
+upward, when it started being taken with the toolchain the gate uses.
 
 ## License
 
