@@ -828,6 +828,87 @@ formula on the output side, and the probe called two files changed that were
 byte-for-byte right. A judge has to read the document the same way its subject does.
 
 
+### A line that lost its indent, and a judge that could not see it
+
+Two WARNING-level diagnostics, found by sharpening the probe that is supposed to
+report them.
+
+**A refused role at the start of a line is a field marker.** A `:pep:` role whose
+argument is not a number is refused by docutils, and this package passes the text
+through escaped, as it does for every `<problematic>`. That puts
+`` :pep:\`PEP 522: Allow BlockingIOError ... `` at the start of a line — and
+`escapeBlockStart` did not escape it, because its field-marker pattern was
+`^:[^:]+:(\s|$)`, a name with no colon in it. docutils' own pattern is
+
+    field_marker=r':(?![: ])([^:\\]|\\.|:(?!([ `]|$)))*(?<! ):( +|$)'
+
+read from `Body.patterns`: the colon after `pep` is followed by a BACKSLASH, so it
+is a legal name character, and the one after `522` is followed by a space, so it
+closes the name. docutils read the whole line as a field, put it in the document's
+**docinfo**, and warned *"Field list ends without a blank line; unexpected
+unindent."* about the next line. The paragraph was gone in both files it happened
+in. Go's regexp is RE2 and has neither lookahead nor lookbehind, so the three
+assertions are now code (`startsWithFieldMarker`) rather than an approximation.
+
+**A directive's argument needs its continuation indented.** `.. rubric:: This is`
+followed by `   a multiline rubric` came back with the second line flush left, which
+ENDS the directive: *"Explicit markup ends without a blank line; unexpected
+unindent."*, and half the rubric became a paragraph. The fix is one line next to the
+one that does the same for an option's continuation — the same funnel, one argument
+higher.
+
+| | before | after |
+|---|---|---|
+| WARNING-level diagnostics the reconstruction adds | 3 files, 7 messages | **0** |
+| round-trip to the same tree (`rtprobe`) | 1480 / 1564 | **1485 / 1564** |
+| source-vs-output equivalence (`fidprobe`) | 1424 / 1564 | **1427 / 1564** |
+
+The `fidprobe` figures above are NOT comparable with the ones in the sections
+before this: every earlier number was measured with the judge described below, which
+read the document differently from the converter. Correcting it moved the count from
+1406 to 1424 before a single line of the package changed — that is the judge's
+correction, not progress, and the two fixes in this section are the 3 after it.
+
+#### What the probes were getting wrong
+
+Neither defect was visible, and both instruments were at fault in the same way:
+**they did not read the document the way the converter does.**
+
+`go-richdoc/rst` turns three report flags OFF (a sphinx-only directive, role or
+option is content to a reader, not an error) and three transforms ON (docinfo
+promotion, footnote numbering, reference resolution). A probe comparing "the
+source's doctree" against "the output's doctree" with plain `docrst.Parse` is
+comparing two different readings:
+
+- `fidprobe` listed **17 files whose output "gained a `<literal_block class='code
+  X'>"`**. Every one was a `.. code-block::` carrying a sphinx option such as
+  `:caption:`, which the probe's own parse turned into an ERROR on the source side
+  while the converter kept the block. Its "unexplained" count was 17 files of its
+  own.
+- With resolution on, a source reference carries its refname AND the destination it
+  resolved to, so references now compare by **where the link goes** —
+  `canonicalReference`, with a unit test whose point is that a DIFFERENT destination
+  still shows. That is a loosening, so it gets a positive control.
+- `diagprobe` compared message COUNTS per file. A file that loses three messages
+  and gains one reads as "better", and the gained one is exactly what the probe
+  exists to find: it had been reporting **0 gained** while 8 files gained 15
+  messages. It compares multisets of (level, text) now.
+- `doctree.Dump` writes `name="A and "q""` — and so does the reference's own
+  pseudoxml, which answers `names="a\ and\ "q""` for the same section. Pseudoxml
+  is not round-trippable, so every `` ` key="[^"]*"` `` regex over it is guesswork;
+  two files were reported as differing because one such pattern ate past the end of
+  a name. The probes read attributes by looking for where the NEXT one starts.
+
+The six flags now live in one place, `probelib`, which every probe that compares a
+source with a converter's output parses through. Six lines copied into each
+`main.go` is how the drift happened in the first place.
+
+What is left in `diagprobe` after the fix is 8 messages in 5 files, all of them the
+INFO *"Enumerated list start value not ordinal-1"* — the shadow of the enumerator
+style this model cannot carry, and below the default report level, so
+`universal.FilterMessages` removes it before a reader could see it.
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -844,8 +925,8 @@ Two measurements over the 1564-file real-world corpus in
 
 | measure | what it asks | state |
 |---|---|---|
-| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1480 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1406 of 1564 equivalent once the boundaries below are removed |
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1485 of 1564 |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1427 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip

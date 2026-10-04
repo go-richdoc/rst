@@ -84,6 +84,14 @@ func inlineSourceOf(el *doctree.Element) string {
 }
 
 func rawDirectiveSource(header string, options []string, content string) string {
+	// The ARGUMENT's continuation lines get the same treatment, and for the same
+	// reason one line further up: a directive's argument may run to several lines
+	// -- ".. rubric:: This is\n   a multiline rubric" is the shape in the corpus
+	// -- and an unindented second line ENDS the directive. docutils then says
+	// "Explicit markup ends without a blank line; unexpected unindent." and the
+	// rest of the argument becomes a paragraph of its own, which is how the
+	// rubric lost half its text.
+	header = continuationIndent(header, 3)
 	// Every option's continuation lines are indented under its own marker, in
 	// ONE place rather than at each of the two dozen call sites that build one.
 	// An option VALUE can run to several lines -- an image's ":alt:" is the
