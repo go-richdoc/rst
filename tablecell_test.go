@@ -97,25 +97,21 @@ func TestAMultiParagraphCellIsAFixedPoint(t *testing.T) {
 	}
 }
 
-// TestACellWithAVerbatimNewlineIsFlattened is the guard, and the reason it
-// exists. A newline inside a literal is CONTENT, not a wrap: written as a real
-// line break, its indentation reads as a block quote and the closing delimiter
-// is lost. PEP 307's cell -- a literal BLOCK ("... fails, ::" and an indented
-// block, which cellBlockInlines turns into a richdoc.Code whose Value carries
-// the newline) -- came back with "Inline literal start-string without
-// end-string" INSIDE the cell, and PEP 720's six-line literal gained 26
-// diagnostics.
+// TestALiteralBlockInACellIsALiteralBlock is what richdoc v0.5.0 made possible,
+// and it replaces a guard rather than adding to it.
 //
-// Neither was visible to the round-trip probe, which is BINARY: both files
-// already did not round-trip, so they stayed "lossy" while getting much worse.
-// What saw it was counting the diagnostics the reconstruction introduces -- 30
-// messages before the multi-line change, 54 after, 27 with this guard.
+// The guard it replaces (TestACellWithAVerbatimNewlineIsFlattened, removed here)
+// forced a cell's whole content onto ONE line, because a newline inside a flattened
+// literal is CONTENT and not a wrap: written as a real line break its indentation
+// read as a block quote and the closing delimiter was lost, which gave PEP 307 an
+// "Inline literal start-string without end-string" INSIDE the cell and PEP 720's
+// six-line literal 26 diagnostics. The cost was stated in that test: one cell
+// cannot be half multi-line, so the paragraph break went too.
 //
-// Against the code as it was BEFORE this round it passes trivially -- every cell
-// was flattened then, so there was nothing to guard. Its baseline is multi-line
-// cells WITHOUT the guard, and the evidence for it is that corpus count, not
-// this case.
-func TestACellWithAVerbatimNewlineIsFlattened(t *testing.T) {
+// With Cell.Blocks the literal block is a literal block again, written as one, and
+// neither of the two treatments the flattened path needs applies -- see cellText.
+// The guard survives for the path that still flattens, immediately below.
+func TestALiteralBlockInACellIsALiteralBlock(t *testing.T) {
 	const src = "" +
 		"+-----+------------------------------------+\n" +
 		"| a   | or, if the update() call fails, :: |\n" +
@@ -123,27 +119,64 @@ func TestACellWithAVerbatimNewlineIsFlattened(t *testing.T) {
 		"|     |    for k, v in state.items():      |\n" +
 		"|     |        setattr(obj, k, v)          |\n" +
 		"+-----+------------------------------------+\n"
-	out, _, _ := roundTrip(t, src)
+	out, d1, d2 := roundTrip(t, src)
 	if strings.Contains(out, "start-string without end-string") {
 		t.Errorf("a diagnostic reached the document:\n%s", out)
 	}
-	// The literal has to come out on ONE line, which is what keeps it a literal.
-	for _, l := range strings.Split(out, "\n") {
+	if !reflect.DeepEqual(d1.Blocks, d2.Blocks) {
+		t.Errorf("not a fixed point:\n%s", out)
+	}
+	// The literal block's own lines, kept as lines and indented under a "::".
+	for _, want := range []string{"::", "for k, v in state.items():", "setattr(obj, k, v)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("want %q in:\n%s", want, out)
+		}
+	}
+	// And the cell really does hold a CodeBlock now, not a Code inline.
+	tbl, ok := d1.Blocks[0].(richdoc.Table)
+	if !ok {
+		t.Fatalf("first block is %T, want a Table", d1.Blocks[0])
+	}
+	cell := tbl.Rows[0][1]
+	if len(cell.Blocks) == 0 {
+		t.Fatalf("the cell carries no Blocks: %#v", cell)
+	}
+	if len(cell.Inlines) == 0 {
+		t.Errorf("the cell carries Blocks but no Inlines, which breaks richdoc's own contract: %#v", cell)
+	}
+	var sawCode bool
+	for _, b := range cell.Blocks {
+		if _, ok := b.(richdoc.CodeBlock); ok {
+			sawCode = true
+		}
+	}
+	if !sawCode {
+		t.Errorf("no CodeBlock among the cell's blocks: %#v", cell.Blocks)
+	}
+}
+
+// TestACellWhoseInlinesHoldAVerbatimNewlineIsStillFlattened keeps the old guard
+// alive for the path that still needs it: a Cell built with a multi-line Code
+// inline and NO Blocks -- by hand, or by any producer that has not moved to
+// richdoc v0.5.0. Written as a real line break that newline would end the literal.
+func TestACellWhoseInlinesHoldAVerbatimNewlineIsStillFlattened(t *testing.T) {
+	doc := richdoc.New().Add(richdoc.Table{
+		Rows: [][]richdoc.Cell{{
+			richdoc.Td(richdoc.Txt("a")),
+			richdoc.Td(richdoc.Mono("for k, v in state.items():\n    setattr(obj, k, v)")),
+		}},
+	}).Doc()
+	out, err := Write(doc)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	for _, l := range strings.Split(string(out), "\n") {
 		if strings.Contains(l, "for k, v") && !strings.Contains(l, "setattr") {
 			t.Errorf("the literal was split across lines:\n%s", out)
 		}
 	}
-	// And the cell's own paragraph break is flattened with it -- one cell
-	// cannot be half multi-line. That is the cost of the guard, stated here so
-	// it is a decision and not a surprise.
-	content := 0
-	for _, l := range strings.Split(out, "\n") {
-		if strings.HasPrefix(l, "|") {
-			content++
-		}
-	}
-	if content != 1 {
-		t.Errorf("expected exactly one content line, got %d:\n%s", content, out)
+	if n := countSystemMessages(t, out); n != 0 {
+		t.Errorf("the output has %d diagnostic(s):\n%s", n, out)
 	}
 }
 

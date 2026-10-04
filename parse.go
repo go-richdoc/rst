@@ -1009,6 +1009,15 @@ func (c *converter) convertTable(el *doctree.Element) richdoc.Table {
 			}
 		}
 	}
+	// A <title> child of the table is its CAPTION -- ".. table:: Caption" -- and
+	// richdoc v0.5.0 has a field for it. 24 captions in 13 corpus files had
+	// nowhere to go before.
+	for _, ch := range el.Children {
+		if ce, ok := ch.(*doctree.Element); ok && ce.Tag == doctree.TagTitle {
+			t.Caption = c.convertInlines(ce.Children)
+			break
+		}
+	}
 	// The DERIVED classes are filtered here, on the way IN, not on the way out.
 	// Filtering them in the writer left the model holding "colwidths-given" while
 	// the reconstruction omitted it, so the next parse had no class and the round
@@ -1026,12 +1035,44 @@ func (c *converter) convertRow(row *doctree.Element) []richdoc.Cell {
 			continue
 		}
 		cells = append(cells, richdoc.Cell{
+			// BOTH, which is richdoc v0.5.0's own contract for a Cell: Blocks
+			// is the faithful content and Inlines the flattened view a consumer
+			// that does not read Blocks still renders. See cellBlocks for when
+			// Blocks is filled at all.
 			Inlines: c.cellInlines(entry.Children),
+			Blocks:  c.cellBlocks(entry),
 			ColSpan: extraSpan(entry, "morecols"),
 			RowSpan: extraSpan(entry, "morerows"),
 		})
 	}
 	return cells
+}
+
+// cellBlocks converts a table entry's children as BLOCKS, for the cells that need
+// it, and returns nil for the cells that do not.
+//
+// reST's grid tables allow full block content in a cell (see docutils/rst's own
+// README) and richdoc v0.5.0 can hold it. Before that every cell was flattened to
+// a run of inlines, which cost 64 list items, 61 line-block lines, 35 literal
+// blocks and 23 bullet lists over the 1564-file corpus -- a list in a cell came
+// back as two paragraphs, a literal block as an inline literal.
+//
+// nil for the common case ON PURPOSE: a cell holding exactly one paragraph says
+// everything it has to say in Inlines, and filling Blocks as well would make every
+// consumer choose between two spellings of the same thing. The rule is therefore
+// "anything a paragraph cannot hold": more than one block, or a single block that
+// is not a paragraph.
+func (c *converter) cellBlocks(entry *doctree.Element) []richdoc.Block {
+	blocks := c.convertBlocks(entry.Children, 1)
+	if len(blocks) == 0 {
+		return nil
+	}
+	if len(blocks) == 1 {
+		if _, ok := blocks[0].(richdoc.Paragraph); ok {
+			return nil
+		}
+	}
+	return blocks
 }
 
 // cellInlines converts a table entry's content to inline text for
@@ -1040,11 +1081,14 @@ func (c *converter) convertRow(row *doctree.Element) []richdoc.Cell {
 // (nested lists, multiple paragraphs; see docutils/rst's own README). A
 // cell holding just one paragraph (the overwhelming common case) is
 // unaffected by any of this; a cell with more than one top-level block has
-// them joined by a single space instead of running together with no
+// them joined by a blank line instead of running together with no
 // separator at all — lossy (which words belonged to which list item or
-// paragraph is gone), but not GARBLED. Same underlying constraint as
-// go-richdoc/latex's own documented "cell content flattened to plain
-// text": richdoc.Cell has no Blocks field to hold real block structure in.
+// paragraph is gone), but not GARBLED.
+//
+// Since richdoc v0.5.0 this is the DEGRADED view, not the only one:
+// [cellBlocks] fills Cell.Blocks with the real structure, and this function
+// keeps producing Cell.Inlines beside it for every consumer that does not read
+// Blocks. richdoc's own Cell doc comment is the contract.
 func (c *converter) cellInlines(children []doctree.Node) []richdoc.Inline {
 	var parts [][]richdoc.Inline
 	for _, ch := range children {
@@ -1056,7 +1100,8 @@ func (c *converter) cellInlines(children []doctree.Node) []richdoc.Inline {
 	for i, p := range parts {
 		if i > 0 {
 			// A BLANK LINE, not a space. Either way the block structure is
-			// gone -- richdoc.Cell has no Blocks -- and either way a consumer
+			// gone from THIS view of the cell -- Cell.Blocks is where it lives
+			// since richdoc v0.5.0 -- and either way a consumer
 			// rendering to HTML sees whitespace, so nothing is lost by the
 			// change. What it buys is a FIXED POINT: a space between two texts
 			// re-parses as one text, so the cell came back with a different
