@@ -10,10 +10,8 @@ github.com/go-crdt/collab v0.45.0 h1:O3HVbnPu1CknSO5IcSKki3xS6C4eJc9s7kijGy1UZp8
 github.com/go-crdt/collab v0.45.0/go.mod h1:d3gQSA54/HSs2Xwh0Mo9ViVOpQPa4hlbOhSnFEhidDI=
 github.com/go-crdt/crdt v0.46.0 h1:Ppup+K/zLvM1trmBz83ENvEVcOTi3fFGnihvJMRL2yc=
 github.com/go-crdt/crdt v0.46.0/go.mod h1:vbfvns9B9FUaMi2sPKzMYttKmbxfgO7EK3Yu82SrlYw=
-github.com/go-docutils/docutils v0.137.1 h1:Zl5WEeBKaYlmOkOdBH58Vx0JlM/bReq4+66n4Rh9xE8=
-github.com/go-docutils/docutils v0.137.1/go.mod h1:HuaoJ4l8061JVxj8IxKWAooCTUEa7agwK+0epTlzApw=
-github.com/go-docutils/docutils v0.139.0 h1:JI8lc6mp4/fDx5CD55z+aYctvTII2lSWbFWwwTi7wgs=
-github.com/go-docutils/docutils v0.139.0/go.mod h1:HuaoJ4l8061JVxj8IxKWAooCTUEa7agwK+0epTlzApw=
+github.com/go-docutils/docutils v0.140.0 h1:RPtD/1B+vE6kco+YGpCLn/g9rcY7vgCv1uJ1eWiPGhU=
+github.com/go-docutils/docutils v0.140.0/go.mod h1:PQB3SpBv7HKEjFW2kH5+l8+zVeDhFayMnwp8jjT+MXk=
 github.com/go-gfx/gfx v0.26.0 h1:/o44PtlRTNhcIJzOPrQZ9yanEfLl49VsYe1fW8q+SQY=
 github.com/go-gfx/gfx v0.26.0/go.mod h1:AySK9I+Z6L2kKVhCg7jmsWsGM2lDRmdAJV2gagvKgH8=
 github.com/go-icons/iconoir v0.2.0 h1:I5AnDEIPgYfawTmwzemDRJjlYCUbFHuS8GJXrjADhXc=
@@ -34,10 +32,8 @@ github.com/go-opentype/shape v0.5.0 h1:jHNaOMHNBdDj5EixOevlrrsi92svMxvVMKN7GYaPf
 github.com/go-opentype/shape v0.5.0/go.mod h1:3ImRYNIj6zpwWQ/DV3BWhgMFfmzDITH6XpZw2auQHTo=
 github.com/go-pdfkit/pdfkit v0.12.0 h1:5hot3DuFYCMT2IyGuPOPE+af7mpEP1tPHqdQ+jdTFwk=
 github.com/go-pdfkit/pdfkit v0.12.0/go.mod h1:XksteXlOe0lEU7cu8E32ClQOjEDjSAN4yAu/IDn19rM=
-github.com/go-richdoc/richdoc v0.4.0 h1:oLhMdRXRRZr3RW6Zqra3N6k5nOX6GFmvgyDpMKEBywM=
-github.com/go-richdoc/richdoc v0.4.0/go.mod h1:aCX8ulqg5CoKqSWgWeEWul1Oj0d2VxQeaQNI0+jsm7c=
-github.com/go-richdoc/richdoc v0.5.0 h1:01u3hsIKlh7U3F4WzLCTKgeMMLzx1hkAumeZjdj1PKk=
-github.com/go-richdoc/richdoc v0.5.0/go.mod h1:aCX8ulqg5CoKqSWgWeEWul1Oj0d2VxQeaQNI0+jsm7c=
+github.com/go-richdoc/richdoc v0.6.0 h1:cema3hE5AAektDXTmvhWyBVnkCcZTVKhnkingwqsN7k=
+github.com/go-richdoc/richdoc v0.6.0/go.mod h1:RhxAcqwoUg1pnTYCiRdKILzOZwOmraO0dMJI4N6yY70=
 github.com/go-tex/engine v0.228.0 h1:V4zSYYiR0kohAGUqOrvmXAjWycePGaQyvmMySKlD+xE=
 github.com/go-tex/engine v0.228.0/go.mod h1:Pymmuc0/Y7kV4NItDaJy4eqTGPav96stmLlzccWsjls=
 github.com/go-tex/math v0.31.0 h1:vMXTE4ZxDtMcG7x78T4HsqM6JHEzPCEBt61tUQvEyn0=
