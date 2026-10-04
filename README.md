@@ -788,6 +788,46 @@ the reparsed output's TEXT it finds 9. A probe gets its own control: it has to f
 on a file whose defect is already known.
 
 
+### The backslash that became two
+
+`:math:` was written through `rawRole`, which escapes a backslash because a role's
+content is escape-processed — in general. docutils' inline parser replaces every
+escaping backslash with a NUL and each role decides what to do with them, and only
+**three** restore them: `raw`, `code` and `math`, via
+`nodes.unescape(text, True)` — *"return a string with nulls … restored to
+backslashes"*. Read in `parsers/rst/roles.py` rather than inferred, and the two
+answers are what settle it:
+
+| asked | the reference answers |
+|---|---|
+| ``:literal:`\emptyset` `` | `<literal>emptyset` |
+| ``:math:`\emptyset` `` | `<math>\emptyset` |
+
+So the escape doubled every TeX command that passed through: ``:math:`\emptyset` ``
+came back as ``:math:`\\emptyset` ``, which is TeX for a line break followed by a
+word. **16 formulas in 5 of the 14 corpus files that hold one.**
+
+The fix is to write the formula VERBATIM, backtick included. Escaping the backtick
+would be wrong for the same reason — the added backslash survives the restore, so
+``a\`b`` came back ``a\\`b`` — and leaving it alone round-trips, because the
+backslash an author already wrote in front of it is what keeps the role from ending
+there. Two shapes cannot be written at all, here or in docutils: a formula holding a
+BARE backtick, and one ENDING in a lone backslash; either way the closing backtick
+is consumed, neither is valid TeX, and the corpus has none.
+
+| | before | after |
+|---|---|---|
+| formulas that come back CHANGED (`mathprobe`) | 5 files, 16 formulas | **0** |
+| round-trip to the same tree (`rtprobe`) | 1476 / 1564 | **1480 / 1564** |
+| source-vs-output equivalence (`fidprobe`) | 1403 / 1564 | **1406 / 1564** |
+
+`mathprobe` is new, and it needed its own correction first: parsing the two sides
+with plain `docrst.Parse` while the converter parses with three report flags OFF
+made sphinx's `.. math:: E = hv` with `:label:` an ERROR on the source side and a
+formula on the output side, and the probe called two files changed that were
+byte-for-byte right. A judge has to read the document the same way its subject does.
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -804,8 +844,8 @@ Two measurements over the 1564-file real-world corpus in
 
 | measure | what it asks | state |
 |---|---|---|
-| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1476 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1403 of 1564 equivalent once the boundaries below are removed |
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1480 of 1564 |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1406 of 1564 equivalent once the boundaries below are removed |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip

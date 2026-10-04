@@ -129,7 +129,9 @@ func (w *writer) writeInline(n richdoc.Inline) string {
 	case richdoc.Math:
 		// Not core docutils either, but a role, like "strike" above, this
 		// package's own Parse resolves back to richdoc.Math specifically.
-		return rawRole("math", v.TeX)
+		// rawMathRole, not rawRole: math is one of the three roles that KEEP
+		// their backslashes, so escaping them doubled every TeX command.
+		return rawMathRole(v.TeX)
 	case richdoc.LineBreak:
 		// reST paragraphs have no hard-break syntax (a literal newline
 		// inside one is just a wrapped line, folded back to a space on

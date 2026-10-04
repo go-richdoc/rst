@@ -687,6 +687,35 @@ func continuationIndent(text string, width int) string {
 //
 // Nothing else needs it: "*", "|" and "_" are inert inside a role's
 // backquotes, and were checked rather than assumed.
+// rawMathRole writes a ":math:" role VERBATIM, which is the whole of it: math is
+// one of exactly three roles whose content keeps its backslashes.
+//
+// docutils' inline parser replaces every escaping backslash with a NUL and each
+// role decides what to do with them; only "raw", "code" and "math" call
+// nodes.unescape(text, True) -- "return a string with nulls ... restored to
+// backslashes" (docutils/nodes.py and parsers/rst/roles.py, read for this). Every
+// other role, ":literal:" and ":sub:" included, drops them: asked about
+// ":literal:`\emptyset`" the reference answers "<literal>emptyset", and about
+// ":math:`\emptyset`" it answers "<math>\emptyset".
+//
+// So writing a formula through rawRole, which escapes a backslash for a role in
+// general, doubled every TeX command in it: ":math:`\emptyset`" came back as
+// ":math:`\\emptyset`", TeX for a line break followed by a word. 16 formulas in 5
+// of the 14 corpus files that hold one.
+//
+// Escaping the BACKTICK would be wrong for the same reason -- the added backslash
+// survives the restore, so "a\`b" came back "a\\`b" -- and leaving it alone is
+// also what round-trips: the backslash an author already wrote in front of it is
+// what keeps the role from ending there, and it comes back unchanged.
+//
+// Two shapes cannot be written at all, here or in docutils: a formula holding a
+// BARE backtick, and one ENDING in a lone backslash. Either way the role's closing
+// backtick is consumed and there is no spelling that avoids it. Neither is valid
+// TeX in the first place, and the corpus has none.
+func rawMathRole(tex string) string {
+	return ":math:`" + tex + "`"
+}
+
 func rawRole(role, text string) string {
 	var b strings.Builder
 	b.Grow(len(role) + len(text) + 4)
