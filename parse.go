@@ -4,6 +4,7 @@
 package rst
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -15,6 +16,23 @@ import (
 // Options controls a conversion choice this package cannot infer from
 // the source. The zero value is what [Parse] uses.
 type Options struct {
+	// LineLengthLimit refuses a document containing a line longer than this,
+	// with an ERROR rather than a tree -- which is docutils' own
+	// denial-of-service guard, 10000 characters by default since
+	// go-docutils/docutils v0.139.0.
+	//
+	// It is here because the parser's refusal is INVISIBLE to a converter: a
+	// refused parse is a document holding one <system_message>, this package
+	// drops diagnostics by default, and the caller would receive an EMPTY
+	// document with nothing saying why. Converting is not parsing -- an empty
+	// result is the worst possible answer -- so the limit is checked here and
+	// reported as an error.
+	//
+	// Zero means the default 10000, because Parse passes Options{} and the zero
+	// value has to mean "the normal behaviour". A NEGATIVE value means no limit,
+	// for a caller that would rather spend the time than lose the document.
+	LineLengthLimit int
+
 	// KeepDiagnostics renders docutils' own <system_message> nodes as
 	// ordinary paragraphs, the way every version before v0.117.0 did.
 	//
@@ -56,7 +74,27 @@ func ParseWithOptions(src []byte, opts Options) (*richdoc.Document, error) {
 	// Same reasoning as the dangling-reference default (v0.66.0): a
 	// diagnostic aimed at an author writing reST becomes fabricated
 	// CONTENT once it reaches a converted document.
+	// The line-length limit, before anything else: see Options.LineLengthLimit
+	// for why a converter reports this rather than letting the parse be refused.
+	limit := opts.LineLengthLimit
+	switch {
+	case limit == 0:
+		limit = docrst.DefaultOptions().LineLengthLimit
+	case limit < 0:
+		limit = 0 // docutils' own "no limit"
+	}
+	if limit > 0 {
+		for i, line := range strings.Split(strings.ReplaceAll(string(src), "\r\n", "\n"), "\n") {
+			if len(line) > limit {
+				return nil, fmt.Errorf("rst: line %d exceeds the line-length limit of %d characters", i+1, limit)
+			}
+		}
+	}
 	dopts := docrst.DefaultOptions()
+	// And the same value to the parser, so a caller that lifted the limit here is
+	// not refused one layer down -- where the refusal would arrive as an empty
+	// document again.
+	dopts.LineLengthLimit = limit
 	dopts.ReportUnknownDirectives = false
 	// Same reasoning for an unknown ROLE: a Sphinx ":doc:" reference is
 	// not an error to a reader, it is text, and convertRole preserves it

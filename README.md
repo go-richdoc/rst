@@ -1168,6 +1168,64 @@ and each is checked NARROWLY in the probe so a real loss cannot hide behind it:
   passes through as text, so other writers render something rather than dropping
   a `RawInline` they do not know.
 
+## Security
+
+A converter turns one format into another, so the question an audit has to ask is
+whether CONTENT CAN BECOME MARKUP on the way out. It can, and this is what was found.
+
+### A heading could become a directive
+
+A title line is the FIRST LINE OF A BLOCK, and reST tries explicit markup before it
+tries a title. A heading whose text began `.. include:: /etc/passwd` was written out
+verbatim, so the next parse read a **directive** with the underline as a transition —
+and a docutils parse with a source path then READS THAT FILE. Demonstrated against
+the reference, which inlined `/etc/passwd`'s contents into the document.
+
+The route in is ordinary. `go-richdoc/markdown` drops inline HTML and keeps its text,
+so
+
+```markdown
+# <b>.. include:: /etc/passwd</b>
+```
+
+arrives here as a `Heading` whose text starts with `..`. A heading's line now goes
+through `escapeBlockStart`, the same escape a paragraph's first line has had since
+the beginning, applied BEFORE the underline is measured so the underline cannot end
+up shorter than its title.
+
+**A probe over every position a document can hold text** (`injectprobe`, beside the
+corpus) says that was the only hole: paragraphs, list items, block quotes, table
+cells and headers, a table caption, a footnote body, a link's text and an image's alt
+text were all escaped already. Seven payloads × two heading levels = **14 (payload,
+position) pairs where text became markup, and 0 after the fix.** The same probe over
+`go-richdoc/markdown` and `go-richdoc/latex` found nothing: every Markdown marker
+(`#`, `-`, `|`, a fence) and every TeX special (`\section{}`, `&`, `\\`,
+`\end{tabular}`, `%`, `_`, `#`, `~`, `^`, `{}`) round-trips as text in all four
+positions.
+
+### A refused parse must not look like an empty document
+
+docutils refuses a document with a line over 10000 characters — its own
+denial-of-service guard, `line_length_limit` — by producing one `<system_message>`
+and no tree. This package drops diagnostics by default, so that refusal arrived as an
+**empty document with nothing saying why**, which is the worst answer a converter can
+give. `Parse` now returns an error naming the line and the limit.
+
+`Options.LineLengthLimit` carries it: zero means the default 10000 (because `Parse`
+passes `Options{}`, so the zero value has to mean the normal behaviour), and a
+NEGATIVE value means no limit at all — for a caller that would rather spend the time
+than lose the document. The value is passed to the parser too, so lifting it here is
+not refused one layer down.
+
+### What this package does NOT protect you from
+
+`.. image:: javascript:alert(1)` and `` `x <javascript:alert(1)>`_ `` are written back
+as they came, and docutils emits the same `href`. A URI scheme allow-list belongs in
+whatever renders the model; neither this package nor the reference filters one.
+
+A `RawBlock` is verbatim by definition. One that arrives from this package's own parse
+came from the document; one a caller constructs is the caller's responsibility.
+
 ## Testing
 
 `go test ./...`. `go vet ./...` and `gofmt -l .` are clean; CI enforces a
