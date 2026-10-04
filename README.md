@@ -1028,6 +1028,50 @@ a multi-line `Code` inline and no `Blocks`, which is what a producer that has no
 moved to v0.5.0 still sends.
 
 
+### The table a definition swallowed
+
+The FOURTH construct to vanish through `rawChildSource`'s fallback, after the
+figure, the image and the directive: a `<table>`. It fell to `AsText`, which is the
+cells' words with no table around them.
+
+PEP 249 puts all three of its tables inside DEFINITIONS and lost every one — 34
+entries, 18 rows and 8 colspecs in that file alone. **64 nodes, now 0.**
+
+It is rebuilt through the same converter and writer a top-level table uses, not a
+second grid renderer — the throwaway pair `inlineSourceOf` already uses for the same
+reason — so a cell's own blocks and a table's caption come with it. A nested table
+whose cell holds a bullet list keeps both now, which is this round and the last one
+meeting.
+
+| | before | after |
+|---|---|---|
+| nested-table nodes lost (`tagprobe`: `entry`, `row`, `colspec`) | 64 | **0** |
+| round-trip to the same tree (`rtprobe`) | 1486 / 1564 | **1489 / 1564** |
+| source-vs-output equivalence (`fidprobe`) | 1440 / 1564 | 1440 / 1564 |
+
+The fidelity number does not move, and that is worth stating: these three files were
+already counted as differing for other reasons, so recovering their tables shows up
+in the TAG census and in the round trip, not in the first-difference measure. One
+probe moving while another holds still is what tells you which part of the document
+changed.
+
+#### What the fallback still has no case for
+
+`tagprobe`'s list after this round, with the boundaries named: `target` (4344,
+resolved targets dropped as bookkeeping), `system_message` and its `paragraph`s
+(1014 + most of 1026, by design), `problematic` (318, passed through as text),
+`title_reference` (307, mapped to `Emph`), substitutions (51 + 35, expanded at their
+reference), `doctest_block` (18, a declined boundary). What is left and NOT a named
+boundary is short:
+
+| nodes | files | tag |
+|---|---|---|
+| 45 | 4 | `literal` |
+| 14 | 7 | `attribution` |
+| 13 | 9 | `reference` |
+| 8 | 4 | `block_quote` |
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -1044,7 +1088,7 @@ Two measurements over the 1564-file real-world corpus in
 
 | measure | what it asks | state |
 |---|---|---|
-| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1486 of 1564 |
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1489 of 1564 |
 | `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1440 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
