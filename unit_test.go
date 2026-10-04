@@ -348,9 +348,16 @@ func TestParse(t *testing.T) {
 			// here, which predates note becoming a real, implemented
 			// directive there (v0.27.0) with its own dedicated RawBlock
 			// reconstruction (see the admonition cases just below).
+			// NO blank line in the reconstruction, and the reference is why:
+			// an unimplemented directive keeps its whole block as text, option
+			// lines included, and an option block must follow the marker
+			// immediately. ".. image:: a.png" with ":alt: x" on the next line
+			// gives <image alt="x">; with a blank line between them it gives
+			// nothing at all. The two spellings are identical for a directive
+			// that has only content, which is what this case has.
 			"directive becomes a RawBlock",
 			".. some-directive::\n\n   content line\n",
-			richdoc.New().RawBlock("rst", ".. some-directive::\n\n   content line").Doc(),
+			richdoc.New().RawBlock("rst", ".. some-directive::\n   content line").Doc(),
 		},
 		{
 			// docutils/rst v0.27.0+ — a generic admonition (no argument

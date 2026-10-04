@@ -123,13 +123,35 @@ func rawDirectiveSource(header string, options []string, content string) string 
 func rawDirective(el *doctree.Element) string {
 	header := ".. " + el.Attr("name") + "::"
 	if args := el.Attr("arguments"); args != "" {
+		// No continuationIndent here, deliberately: this parser puts only the
+		// MARKER LINE's remainder in "arguments" and everything under it in the
+		// body, so the argument is never more than one line. Checked rather than
+		// assumed -- ".. py:function:: f(a,\n                 b)" arrives as
+		// arguments="f(a," with "b)" as body text.
 		header += " " + args
 	}
 	body := doctree.AsText(el)
 	if body == "" {
 		return header
 	}
-	return header + "\n\n" + indentBlock(body)
+	// NO blank line between the marker and the body, and that is not a style
+	// choice. A <directive> this parser did not implement keeps its whole block
+	// as text, OPTION LINES INCLUDED -- an unknown directive has no option_spec
+	// to split them off with -- and an option block has to follow the marker
+	// immediately. Asked about both spellings, the reference answers
+	//
+	//	.. image:: a.png      -> <image alt="x" uri="a.png">
+	//	   :alt: x
+	//
+	//	.. image:: a.png      -> nothing at all
+	//
+	//	   :alt: x
+	//
+	// so a blank line turns every option into content. For a directive with only
+	// content the two spellings are identical (".. note::" with and without one
+	// gives the same <note>), so dropping the blank line costs nothing and keeps
+	// the options.
+	return header + "\n" + indentBlock(body)
 }
 
 // rawAdmonition reconstructs one of the nine generic admonition
@@ -1011,6 +1033,15 @@ func rawChildSource(n doctree.Node) string {
 		return rawRubric(el)
 	case doctree.TagContainer:
 		return rawContainer(el)
+	case doctree.TagDirective:
+		// A directive this parser has no implementation for keeps its name, its
+		// argument and its whole block as text, and nothing else here can put
+		// those back together. Without this case it fell to AsText: a bare
+		// ".. versionadded:: 1.8" nested in a definition has NO text, so it
+		// disappeared completely, and one with content lost its marker line and
+		// became a paragraph. 95 directives in 9 files -- 77 of them in sphinx's
+		// own latex.rst, which nests them in definitions throughout.
+		return rawDirective(el)
 	case doctree.TagRaw:
 		// A raw block's content is markup for its own target format, and this
 		// is the directive that says so. The fallback emitted the content bare,
