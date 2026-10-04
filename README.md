@@ -909,6 +909,67 @@ style this model cannot carry, and below the default report level, so
 `universal.FilterMessages` removes it before a reader could see it.
 
 
+### The directive a definition swallowed, and a probe that counts them all
+
+`rawChildSource` had no case for a `<directive>` — the element a directive this
+parser has no implementation for comes back as. It fell through to `AsText`, and a
+bare `.. versionadded:: 1.8` has NO text at all, so it **disappeared completely**; one
+with content kept the content and lost its marker line. sphinx's own `latex.rst`
+nests them in definitions throughout and lost **77 of its 131**.
+
+Measured: **95 directives in 9 files**, now 0.
+
+The body's spelling came from the reference. An unimplemented directive keeps its
+whole block as text, OPTION LINES INCLUDED — it has no `option_spec` to split them
+off with — and an option block has to follow the marker immediately:
+
+| asked | the reference answers |
+|---|---|
+| `.. image:: a.png` ⏎ `   :alt: x` | `<image alt="x" uri="a.png">` |
+| `.. image:: a.png` ⏎ ⏎ `   :alt: x` | nothing at all |
+
+So the blank line this writer emitted between the marker and the body turned every
+option into content. For a directive with only content the two spellings are
+identical (`.. note::` gives the same `<note>` either way), which is what makes
+dropping it free. One fixture of this package's own output had to be corrected, with
+that reason recorded in it.
+
+| | before | after |
+|---|---|---|
+| directives the reconstruction loses (`tagprobe`) | 9 files, 95 directives | **0** |
+| round-trip to the same tree (`rtprobe`) | 1485 / 1564 | **1486 / 1564** |
+| source-vs-output equivalence (`fidprobe`) | 1427 / 1564 | **1430 / 1564** |
+
+#### Finding the class instead of the next instance
+
+This is the THIRD defect of exactly this shape: a tag `rawChildSource` has no case
+for, whose content is not text, vanishing silently — the figure and the image in one
+round, the directive in the next. Modelling which tags *can* reach that function was
+wrong twice, so `tagprobe` asks the trees instead: it counts every element tag in the
+source's doctree against the output's and reports the ones that LOSE nodes.
+
+What it says now, with the known boundaries named: `target` (4344, resolved targets
+dropped as bookkeeping), `system_message` and the `paragraph`s inside them (1014 and
+~1000, dropped by design), `problematic` (318, passed through as text),
+`title_reference` (307, mapped to `Emph`), `substitution_reference` and
+`substitution_definition` (51 and 35, expanded at their reference). And then the ones
+that are NOT boundaries, which is the list this converter still owes:
+
+| nodes | files | tag |
+|---|---|---|
+| 64 + 27 | 6 / 9 | `list_item`, `bullet_list` |
+| 47 + 14 | 2 | `line`, `line_block` |
+| 41 + 21 + 8 | 3 / 4 / 2 | `entry`, `row`, `colspec` (nested tables) |
+| 39 | 9 | `literal_block` |
+| 24 | 13 | `title` |
+| 18 | 11 | `doctest_block` (a declined boundary — see above) |
+| 14 | 7 | `attribution` |
+| 10 | 1 | `image` |
+
+A probe that answers "which of these do I lose" beats nine rounds of finding out one
+at a time.
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -925,8 +986,8 @@ Two measurements over the 1564-file real-world corpus in
 
 | measure | what it asks | state |
 |---|---|---|
-| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1485 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1427 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1486 of 1564 |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1430 of 1564 equivalent once the boundaries below are removed, reading as the converter reads |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip
