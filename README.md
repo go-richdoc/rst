@@ -729,6 +729,65 @@ were measured and then left alone, which is the part worth recording.
   again.
 
 
+### The sentence no author wrote
+
+A table cell is flattened to INLINES — `richdoc.Cell` has no `Blocks` — so every
+child of an `<entry>` goes through `cellBlockInlines`, and a `<system_message>` in
+one reached its `default:` branch and came back as its own TEXT:
+
+    +-------------------------+------+-----------------------------------------------------+
+    | Easy for humans to edit | yes  | Unexpected possible title overline or transition.   |
+    |                         |      | Treating it as ordinary text because it's so short. |
+    |                         |      |                                                     |
+    |                         |      | ??                                                  |
+    +-------------------------+------+-----------------------------------------------------+
+
+That is PEP 518's comparison table, where the author wrote `??` and the reader gets
+the parser's remark about it. `convertBlockNode`'s `TagSystemMessage` case — the one
+that drops diagnostics by default — is never consulted on the cell path, the same
+blind spot `rawSource` had (hence `withoutDiagnostics`) in a third place.
+
+Measured over the corpus: **9 files, 29 occurrences** — 28 of them that one INFO
+about a short line of punctuation, 1 a `:pep:` role whose argument was not a number.
+
+What the reference says about dropping them. docutils' PARSER attaches the message
+whatever its level: asked for the doctree of a simple table whose cell holds `??`,
+`rst.Parser.parse` alone gives a `<system_message level="1">` and the PUBLISHED
+document has none. The removal is a TRANSFORM, `universal.FilterMessages`, run by
+the reader against `report_level`. So the message really is in the tree this
+converter reads, and dropping it is what the reference does too — at the default
+report level, which is what `KeepDiagnostics: false` means here. The same transform
+corroborates the older choice two sections down: when it removes a message it
+"convert[s] `<problematic>` nodes referencing removed messages to `<Text>` nodes",
+which is exactly what this package does with a construct docutils refused.
+
+The ERROR half of the policy holds inside a cell as well: at level 3 and above
+docutils REFUSED to build the construct and quotes the author's source in a
+`<literal_block>`, so a malformed table nested in a `.. list-table::` cell keeps its
+own lines as `Code` and only the complaint goes.
+
+| | before | after |
+|---|---|---|
+| a parser complaint written into the document as text (`leakprobe`) | 9 files, 29 occurrences | **0** |
+| round-trip to the same tree (`rtprobe`) | 1472 / 1564 | **1476 / 1564** |
+| source-vs-output equivalence (`fidprobe`) | 1399 / 1564 | **1403 / 1564** |
+| diagnostics the reconstruction adds (`diagprobe`) | 0 | 0 |
+
+#### Why `diagprobe` read zero for this
+
+`diagprobe` counts `<system_message>` elements in the reparse, and **a message that
+became a paragraph is no longer a message**. It was answering its own question
+correctly and could not see this one; what found it was `fidprobe`, which compares
+the two trees and had the sentence sitting in its `text -> text` bucket all along.
+
+`leakprobe` asks the question directly: does the TEXT of a source `<system_message>`
+appear in the output, and not already in the source (an author may quote docutils)?
+Its first version searched the written reST and found **1 file**, because a leaked
+message lands in a grid-table cell where the `|` borders cut every line of it. Over
+the reparsed output's TEXT it finds 9. A probe gets its own control: it has to fire
+on a file whose defect is already known.
+
+
 ## Round-trip
 
 `Parse(Write(Parse(src)))` reproduces `Parse(src)`'s tree for the natively
@@ -745,8 +804,8 @@ Two measurements over the 1564-file real-world corpus in
 
 | measure | what it asks | state |
 |---|---|---|
-| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1472 of 1564 |
-| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1399 of 1564 equivalent once the boundaries below are removed |
+| `rtprobe` | does `Parse(Write(d))` give back `d`? | 1476 of 1564 |
+| `fidprobe` | do the SOURCE and the OUTPUT parse to the same doctree? | 1403 of 1564 equivalent once the boundaries below are removed |
 
 `fidprobe` is the stricter and the more useful of the two: it sits outside both
 steps, so it sees a loss that happens on the way IN — which a round trip
