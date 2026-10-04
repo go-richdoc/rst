@@ -4,6 +4,7 @@
 package rst
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -184,8 +185,13 @@ func writeLink(l richdoc.Link) string {
 		if t, ok := l.Inlines[0].(richdoc.Text); ok {
 			// A bare URL round-trips through this package's own
 			// standalone-URI auto-recognition without any embedded-link
-			// markup at all.
-			if t.Value == l.URL {
+			// markup at all -- but ONLY if it is one. docutils recognises a
+			// standalone URI as an absolute URI (a scheme, then ":") or an
+			// email address, and nothing else (Inliner.patterns.uri, read
+			// directly): "py-code.org" has neither, so collapsing
+			// "`py-code.org <py-code.org>`__" to "py-code.org" turned a link
+			// into plain text. PEP 770 writes exactly that.
+			if t.Value == l.URL && isStandaloneURI(l.URL) {
 				return l.URL
 			}
 			// And so does a bare EMAIL address, which is the same
@@ -285,4 +291,31 @@ func plainText(nodes []richdoc.Inline) string {
 // characters that would otherwise inflate it.
 func writeInlinesPlain(nodes []richdoc.Inline) string {
 	return plainText(nodes)
+}
+
+// reScheme is the scheme of an absolute URI, transcribed from docutils'
+// Inliner.patterns.uri: "[a-zA-Z][a-zA-Z0-9.+-]*" followed by ":".
+var reScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9.+-]*:`)
+
+// isStandaloneURI reports whether reST would recognise s written on its own as a
+// hyperlink, which is what makes it safe to drop the embedded-link markup around
+// it.
+//
+// Two alternatives, and no others (Inliner.patterns.uri, read directly): an
+// ABSOLUTE URI -- a scheme and a colon -- or an EMAIL address. A bare host name
+// is neither; docutils reads "py-code.org" as ordinary text, which is why the
+// collapse has to be conditional. The email form is approximated by "it contains
+// an @ and no space", which is enough here: the only question is whether to KEEP
+// the markup, and keeping it for an address this test rejects is harmless --
+// "`a@b <a@b>`__" is a valid link -- while dropping it for something reST does
+// not recognise is not.
+func isStandaloneURI(s string) bool {
+	if s == "" || strings.ContainsAny(s, " \t\n") {
+		return false
+	}
+	if reScheme.MatchString(s) {
+		return true
+	}
+	at := strings.IndexByte(s, '@')
+	return at > 0 && at < len(s)-1
 }
