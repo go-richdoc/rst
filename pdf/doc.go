@@ -22,6 +22,16 @@
 // own documentation once it went through docutils first; this package is
 // that same chain, kept.
 //
+// # Faces
+//
+// The faces are not optional. Without them the engine falls back to its maths
+// default and the whole document, prose included, is typeset in
+// STIXTwoMath-Regular — which this package did through v0.4.1, with nothing
+// saying so. Lora is supplied for roman, bold and italic.
+//
+// Bold and italic are supplied and INERT: see go-tex/engine#590. Emphasis
+// survives as words and comes back roman.
+//
 // # Why a package rather than the parent
 //
 // The same reason latex/pdf gives: the engine is a six-megabyte TeX
