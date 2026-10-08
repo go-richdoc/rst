@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-docutils/docutils/latex"
 	docrst "github.com/go-docutils/docutils/rst"
+	"github.com/go-opentype/fonts/lora"
 	"github.com/go-richdoc/richdoc"
 	"github.com/go-richdoc/rst"
 	"github.com/go-tex/engine"
@@ -64,7 +65,18 @@ func WriteTo(w io.Writer, doc *richdoc.Document, opt Options) (pages int, err er
 	if err != nil {
 		return 0, fmt.Errorf("pdf: writing the document as reST: %w", err)
 	}
-	pages, err = compile(rebaseImages(src, opt.BaseDir), engine.Options{Lenient: !opt.Strict}, w)
+	// ⛔ The faces are NOT optional. Without them the engine falls back to its
+	// maths default — STIXTwoMath — and the whole document, prose included, is
+	// typeset in it: a measurement of the output showed /BaseFont
+	// STIXTwoMath-Regular and nothing else. Worse, \bf and \it are bound only
+	// when a bold and an italic face are supplied, so emphasis silently came
+	// back roman. latex/pdf carried the same defect until v0.7.0.
+	pages, err = compile(rebaseImages(src, opt.BaseDir), engine.Options{
+		Lenient:    !opt.Strict,
+		Font:       lora.TTF,
+		BoldFont:   lora.BoldTTF,
+		ItalicFont: lora.ItalicTTF,
+	}, w)
 	if err != nil {
 		return 0, fmt.Errorf("pdf: typesetting it: %w", err)
 	}

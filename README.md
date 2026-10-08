@@ -218,6 +218,29 @@ What survives the whole way, read back out of the finished PDF with
 `pdftotext` rather than trusted: headings, emphasis, bold, bulleted lists,
 block code, and accented text.
 
+⛔ **`pdftotext` sees the text, not the face.** Emphasis and bold survive as
+*words*, in the right order, in the right place — and come back **roman**. The
+engine's `Options` carry `BoldFont` and `ItalicFont`, this package supplies
+both, and they are inert: a paragraph with `**bold**` and `*italic*` in it
+leaves exactly one `/BaseFont` in the file. That is
+[go-tex/engine#590](https://github.com/go-tex/engine/issues/590), not this
+repository, and `TestEmphasisStillComesBackRoman` asserts what is true today so
+that it goes **red** the day the engine honours the faces.
+
+### The face itself
+
+⛔ Through v0.4.1 this package named **no font at all**, so the engine fell back
+to its maths default and every document here — running prose included — was
+typeset in **STIXTwoMath-Regular**. Nothing said so: the page count was right,
+the text was readable, `pdftotext` read it back, and the file opened. A maths
+face sets prose with the wrong rhythm and the wrong figures, and the only
+witness is the name inside the file.
+
+`latex/pdf` carried the identical defect and fixed it in its own v0.7.0. This
+package was not looked at then — which is the lesson worth more than the fix: a
+correction in one sibling has to be **checked** in the others, never assumed to
+have travelled.
+
 The whole chain is now measured over the 1564-file real-world corpus rather
 than a handful of shapes: **1553 of 1564 typeset** in `Strict` mode. The 11
 that do not are all named — 8 are empty sources, so there is nothing to put on
