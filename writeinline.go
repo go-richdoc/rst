@@ -193,7 +193,7 @@ func writeLink(l richdoc.Link) string {
 			// directly): "py-code.org" has neither, so collapsing
 			// "`py-code.org <py-code.org>`__" to "py-code.org" turned a link
 			// into plain text. PEP 770 writes exactly that.
-			if t.Value == l.URL && isStandaloneURI(l.URL) {
+			if t.Value == l.URL && isStandaloneURI(l.URL) && bareURIKeepsItsTail(l.URL) {
 				return l.URL
 			}
 			// And so does a bare EMAIL address, which is the same
@@ -311,6 +311,43 @@ var reScheme = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9.+-]*:`)
 // the markup, and keeping it for an address this test rejects is harmless --
 // "`a@b <a@b>`__" is a valid link -- while dropping it for something reST does
 // not recognise is not.
+// bareURIKeepsItsTail reports whether a standalone URI's LAST CHARACTER would
+// still be part of the URI once reST read it back. docutils ends a standalone
+// URI before most trailing punctuation, so that a sentence's own full stop or
+// a closing bracket is not swallowed into the link -- and a URL that genuinely
+// ends in one of those cannot be written bare at all.
+//
+// One real-world footnote does: PEP 615 cites a Microsoft URL ending in "-",
+// and written bare it came back as a link to the URL WITHOUT the hyphen plus a
+// separate text node holding it. The embedded form keeps it.
+//
+// The surviving set was MEASURED against the reference rather than read off its
+// regex -- every ASCII punctuation character in turn as the final character of
+// "https://example.com/a", asking publish_doctree for the resulting refuri.
+// Only "*+/=~" come back whole, and ASCII alphanumerics.
+//
+// Non-ASCII is in the REFUSING half, and the measurement is what says so: this
+// function first returned true for it, on the reasoning that docutils' uri
+// pattern would treat an unknown character as ordinary text and simply end the
+// URI before it. It does worse than that. A URL ending in "e" with an acute
+// accent comes back as "https://example.com" -- the whole PATH is gone, not
+// just the last character -- and so do a CJK character, a copyright sign and a
+// zero-width space. Only an em dash loses just itself. Written bare, such a URL
+// does not lose a character, it loses its path.
+func bareURIKeepsItsTail(s string) bool {
+	if s == "" {
+		return false
+	}
+	last := s[len(s)-1]
+	if last >= 0x80 {
+		return false
+	}
+	if last >= '0' && last <= '9' || last >= 'a' && last <= 'z' || last >= 'A' && last <= 'Z' {
+		return true
+	}
+	return strings.IndexByte("*+/=~", last) >= 0
+}
+
 func isStandaloneURI(s string) bool {
 	if s == "" || strings.ContainsAny(s, " \t\n") {
 		return false

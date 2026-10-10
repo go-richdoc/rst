@@ -1391,6 +1391,33 @@ Round trip **1496 → 1497 of 1564**, with `fidprobe` and the character count
 unchanged.
 
 
+### A bare URL ends where reST says it ends
+
+A link whose text IS its URL is written bare, with no embedded-link markup at
+all — but reST ends a standalone URI *before* most trailing punctuation, so
+that a sentence's own full stop is not swallowed into the link. A URL that
+genuinely ends in one of those cannot be written bare at all.
+
+PEP 615 cites a Microsoft URL ending in `-`. Written bare, it came back as a
+link to the URL **without** the hyphen plus a separate text node holding it.
+
+The surviving set was measured against the reference rather than read off its
+regex — every ASCII punctuation character in turn as the final character of
+`https://example.com/a`, asking `publish_doctree` for the resulting `refuri`.
+Only `*+/=~` come back whole, and alphanumerics.
+
+**Non-ASCII is in the refusing half, and the measurement is what says so.** The
+predicate first answered *yes* for it, reasoning that docutils would simply end
+the URI before an unknown character. It does worse: `https://example.com/aé`
+comes back as `https://example.com` — the whole PATH is gone, not just the last
+character — and so do a CJK character, a copyright sign and a zero-width space.
+Only an em dash loses just itself. Written bare, such a URL does not lose a
+character, it loses its path.
+
+Round trip **1504 → 1505**, and `destprobe` — a different probe, asking whether
+a reference still points where it did — **6 → 5** on the same change.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,
