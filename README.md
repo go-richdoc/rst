@@ -1450,7 +1450,7 @@ a span the grid has to allocate for.
 
 ## Toolchain
 
-Requires **Go 1.27.1**, the version the CI workflow pins. The module asked for 1.26.4
+Requires **Go 1.27.2**, the version the CI workflow pins. The module asked for 1.26.4
 until now while CI already ran 1.27.1, and the difference decides two things:
 
 - 1.27 counts statements more finely, so **a coverage figure from an older toolchain is
