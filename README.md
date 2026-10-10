@@ -1358,6 +1358,39 @@ round's work, because closing it means `Header [][]Cell` in richdoc — a
 breaking change to the model for two files, which is the sort of trade worth
 making deliberately and not on the way past.
 
+### A quote with nothing in it is not a block
+
+With the table class down to its two named cases, the round trip's last
+STRUCTURAL difference over the real-world corpus was one file: the only class
+where a block came back as a different TYPE rather than with different content.
+It read `BlockQuote -> Paragraph` at block 94 of 150 — and that was neither.
+
+PEP 12 indents a **footnote definition** under "which renders as":
+
+```rst
+which renders as
+
+    .. [#TeXbook] Donald Knuth's *The TeXbook*, pages 195 and 196.
+```
+
+docutils reads a block quote containing a footnote. A definition becomes a
+`richdoc.Footnote` at its reference point rather than a block, so the quote
+converts to a `BlockQuote` with **no blocks** — and reST spells a quote by
+INDENTING its content, so an empty one has no spelling at all. The writer
+emitted nothing, the block vanished, the count went 150 → 149, and every block
+after it shifted by one. What the probe reported was that MISALIGNMENT, which is
+the report an index-aligned comparison gives when an item is *missing*.
+
+So the converter no longer emits one. Nothing is lost: the footnote's text is
+still in the document, where this writer puts every definition, and the parser
+would never produce an empty quote on re-reading the output anyway. The control
+that matters is the other direction — a quote WITH content still survives, which
+a check that could not tell the two apart would pass either way.
+
+Round trip **1496 → 1497 of 1564**, with `fidprobe` and the character count
+unchanged.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,

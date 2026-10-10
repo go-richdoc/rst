@@ -655,7 +655,22 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 	case doctree.TagEnumeratedList:
 		return []richdoc.Block{c.convertList(el, true)}
 	case doctree.TagBlockQuote:
-		return []richdoc.Block{richdoc.BlockQuote{Blocks: c.convertBlocks(el.Children, level), Classes: classesOf(el)}}
+		// A quote with nothing in it is not a block. It arises when every child
+		// converts to nothing, which the corpus has one real instance of: PEP 12
+		// indents a FOOTNOTE DEFINITION under "which renders as", and a
+		// definition becomes a richdoc.Footnote at its reference point rather
+		// than a block, so the quote comes back empty.
+		//
+		// Keeping it loses more than dropping it. reST spells a quote by
+		// INDENTING its content, so an empty one has no spelling at all: the
+		// writer emits nothing, the block vanishes from the output, and every
+		// block after it shifts -- which is why the round-trip probe reported
+		// this as "BlockQuote -> Paragraph" at index 94 of 150. That was the
+		// MISALIGNMENT, not a conversion.
+		if blocks := c.convertBlocks(el.Children, level); len(blocks) > 0 {
+			return []richdoc.Block{richdoc.BlockQuote{Blocks: blocks, Classes: classesOf(el)}}
+		}
+		return nil
 	case doctree.TagAttribution:
 		// docutils/rst v0.19.0+ — a block quote's trailing "-- text"
 		// attribution. Its children are bare INLINE nodes (parseInline's
