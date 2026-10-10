@@ -573,57 +573,55 @@ func indentItem(content, marker string) string {
 // cell content, which keeps this writer from having to invent a padding
 // scheme independent of what's in the cells.
 //
-// A cell's ColSpan merges the interior "|" between the columns it covers
-// into the cell's own padded content area (the border row above/below stays
-// a full "+---+---+", unaffected — only the CONTENT line's interior
-// separator disappears; verified against a real docutils grid-table
-// example). RowSpan is preserved on the richdoc.Cell itself (so nothing is
-// lost from the tree Parse produced), but this writer does not merge the
-// horizontal border between spanned rows: reconstructing that would need
-// tracking which columns have a row-span still "open" at each border and
-// blanking just that segment, real complexity for a rarer construct than
-// column-spanning, deferred rather than half-done. The cell's own content
-// still renders in full, just as its own bordered row.
+// Both spans are drawn, which is a placement problem before it is a drawing
+// one -- see grid.go. A ColSpan merges the interior "|" between the columns
+// it covers into the cell's own padded content area; a RowSpan takes the
+// horizontal rule out from under itself and shifts the row below, since that
+// row's cells no longer start at column 0.
 func (w *writer) writeTable(t richdoc.Table) string {
-	cols := spannedCols(t.Header)
-	for _, row := range t.Rows {
-		if n := spannedCols(row); n > cols {
-			cols = n
+	rows := make([][]spanCell, 0, len(t.Rows)+1)
+	headerRule := 0
+	if len(t.Header) > 0 {
+		// A header cell may not span DOWN: the "=" rule under the header has
+		// to cross the whole table, or what comes back is not a header.
+		header := spanCellTexts(w, t.Header)
+		for i := range header {
+			header[i].rows = 1
 		}
+		rows = append(rows, header)
+		headerRule = 1
 	}
-	if cols == 0 {
+	for _, row := range t.Rows {
+		rows = append(rows, spanCellTexts(w, row))
+	}
+	if len(rows) == 0 {
 		return ""
 	}
-	widths := make([]int, cols)
-	headerCells := spanCellTexts(w, t.Header, cols)
-	widenColumns(widths, headerCells)
-	rowCells := make([][]spanCell, len(t.Rows))
-	for r, row := range t.Rows {
-		rowCells[r] = spanCellTexts(w, row, cols)
-		widenColumns(widths, rowCells[r])
+	cells, owner, nrows, ncols := placeGrid(rows)
+	if ncols == 0 {
+		return ""
 	}
-	for i, wd := range widths {
-		if wd < 1 {
-			widths[i] = 1
-		}
+	lines := make([][]string, len(cells))
+	for i, c := range cells {
+		// A row is as many source lines as its TALLEST cell. It used to be
+		// exactly one, with every newline collapsed to a space -- which
+		// corrupted nothing and lost nothing readable, but re-wrapped the
+		// cell: "...is not\npresent, this method raises a" came back as one
+		// long line, so 45 of the 1564 real-world files did not round-trip.
+		// reST folds a wrap back to a space, so the two are the same
+		// DOCUMENT; they are not the same tree, and keeping the author's own
+		// lines is what makes the tree a fixed point.
+		//
+		// A richdoc.LineBreak inside a cell is still lossy either way: it
+		// renders as a newline, and reST reads a newline inside a cell as a
+		// soft wrap, so it comes back as text rather than as a break. Named
+		// rather than hidden -- a grid cell has no reST spelling for a hard
+		// break outside a line block.
+		lines[i] = strings.Split(c.text, "\n")
 	}
-	widenSpannedColumns(widths, headerCells)
-	for _, rc := range rowCells {
-		widenSpannedColumns(widths, rc)
-	}
-
-	var b strings.Builder
-	border := gridBorder(widths, '-')
-	b.WriteString(border + "\n")
-	if len(t.Header) > 0 {
-		b.WriteString(gridRow(headerCells, widths) + "\n")
-		b.WriteString(gridBorder(widths, '=') + "\n")
-	}
-	for _, rc := range rowCells {
-		b.WriteString(gridRow(rc, widths) + "\n")
-		b.WriteString(border + "\n")
-	}
-	grid := strings.TrimRight(b.String(), "\n")
+	widths := gridWidths(cells, ncols)
+	heights := gridHeights(cells, lines, nrows)
+	grid := renderGrid(cells, owner, widths, heights, lines, headerRule)
 	// A CAPTION is the ".. table::" directive's argument, with the grid as its
 	// content: that is the only spelling reST has for one, and docutils puts it
 	// back as the <title> child this converter reads it from.
@@ -638,6 +636,7 @@ func (w *writer) writeTable(t richdoc.Table) string {
 type spanCell struct {
 	text string
 	span int
+	rows int
 }
 
 func cellSpan(c richdoc.Cell) int {
@@ -647,14 +646,11 @@ func cellSpan(c richdoc.Cell) int {
 	return c.ColSpan
 }
 
-// spannedCols totals a row's logical column count, cells' spans included —
-// necessarily >= len(cells), and equal to it only when nothing spans.
-func spannedCols(cells []richdoc.Cell) int {
-	n := 0
-	for _, c := range cells {
-		n += cellSpan(c)
+func cellRows(c richdoc.Cell) int {
+	if c.RowSpan < 1 {
+		return 1
 	}
-	return n
+	return c.RowSpan
 }
 
 // cellKeepsItsLines reports whether a cell's own line breaks can be written as
@@ -727,22 +723,14 @@ func cellWidth(text string) int {
 	return w
 }
 
-// spanCellTexts renders a row's cells to text+span pairs, padding the
-// logical column count out to cols with empty unspanned cells (a short row,
-// same as [richdoc.Table]'s own doc comment allows for a headerless or
-// ragged table) so [gridRow]/[widenColumns] never need to special-case a
-// row narrower than the table.
-func spanCellTexts(w *writer, cells []richdoc.Cell, cols int) []spanCell {
+// spanCellTexts renders a row's cells to text+span triples. It no longer pads
+// the row out to the table's width: a short row (which [richdoc.Table]'s own
+// doc comment allows for a headerless or ragged table) is a row with HOLES in
+// it, and only [placeGrid] can see where they fall once a span from an earlier
+// row has moved the cells along.
+func spanCellTexts(w *writer, cells []richdoc.Cell) []spanCell {
 	out := make([]spanCell, 0, len(cells))
-	used := 0
 	for _, c := range cells {
-		if used >= cols {
-			break
-		}
-		span := cellSpan(c)
-		if used+span > cols {
-			span = cols - used
-		}
 		// escapeBlockStart, and BEFORE flattening: a cell's content is parsed
 		// as its own block fragment, so a cell beginning with something reST
 		// reads as a block marker starts one. PEP 624 writes "\(2)" in a cell
@@ -758,12 +746,7 @@ func spanCellTexts(w *writer, cells []richdoc.Cell, cols int) []spanCell {
 		// enough: every later line ends up mid-line, where no block marker is
 		// recognised.
 		text := cellText(w, c)
-		out = append(out, spanCell{text: text, span: span})
-		used += span
-	}
-	for used < cols {
-		out = append(out, spanCell{span: 1})
-		used++
+		out = append(out, spanCell{text: text, span: cellSpan(c), rows: cellRows(c)})
 	}
 	return out
 }
@@ -795,109 +778,19 @@ func cellText(w *writer, c richdoc.Cell) string {
 	return text
 }
 
-// widenColumns widens each UNSPANNED cell's own column to fit its content —
-// the same "establish widths from ordinary cells first" pass every table
-// here has always done, just column-index-aware now that a row's cells
-// don't map 1:1 to columns once something spans.
-func widenColumns(widths []int, cells []spanCell) {
-	col := 0
-	for _, c := range cells {
-		if c.span == 1 {
-			if wd := cellWidth(c.text); wd > widths[col] {
-				widths[col] = wd
-			}
-		}
-		col += c.span
-	}
-}
-
-// widenSpannedColumns runs once unspanned widths are settled: if a spanning
-// cell's own content is wider than the columns it covers already provide —
-// spanTextWidth, the same quantity [gridRow] computes to pad against —
-// widens the LAST column in its span to absorb the whole difference. Simple
-// over an even split: correctness (the merged content still fits) matters
-// here, not perfectly balanced column widths for a cell nothing else in the
-// table constrains.
-func widenSpannedColumns(widths []int, cells []spanCell) {
-	col := 0
-	for _, c := range cells {
-		if c.span > 1 {
-			need := cellWidth(c.text) - spanTextWidth(widths, col, c.span)
-			if need > 0 {
-				widths[col+c.span-1] += need
-			}
-		}
-		col += c.span
-	}
-}
-
 // spanTextWidth is the padded-text-area width available to a cell spanning
-// `span` columns starting at `col` — derived from gridBorder's own
+// `span` columns starting at `col` — derived from the frame's own
 // per-column "+2" convention: merging N columns removes N-1 interior "|"
 // characters but each removal effectively donates 3 characters (the
 // interior "|" plus the two single padding spaces that flanked it) to the
 // merged content area, verified by matching total line length against
-// gridBorder's unchanged output for a real docutils grid-table example.
+// a real docutils grid-table example's own line lengths.
 func spanTextWidth(widths []int, col, span int) int {
 	total := 3 * (span - 1)
 	for i := col; i < col+span; i++ {
 		total += widths[i]
 	}
 	return total
-}
-
-func gridBorder(widths []int, ch byte) string {
-	var b strings.Builder
-	b.WriteByte('+')
-	for _, wd := range widths {
-		b.WriteString(strings.Repeat(string(ch), wd+2))
-		b.WriteByte('+')
-	}
-	return b.String()
-}
-
-func gridRow(cells []spanCell, widths []int) string {
-	// A row is as many source lines as its TALLEST cell. It used to be exactly
-	// one, with every newline collapsed to a space -- which corrupted nothing
-	// and lost nothing readable, but re-wrapped the cell: "...is not\npresent,
-	// this method raises a" came back as one long line, so 45 of the 1564
-	// real-world files did not round-trip. reST folds a wrap back to a space,
-	// so the two are the same DOCUMENT; they are not the same tree, and keeping
-	// the author's own lines is what makes the tree a fixed point.
-	//
-	// A richdoc.LineBreak inside a cell is still lossy either way: it renders
-	// as a newline, and reST reads a newline inside a cell as a soft wrap, so it
-	// comes back as text rather than as a break. Named rather than hidden -- a
-	// grid cell has no reST spelling for a hard break outside a line block.
-	lines := make([][]string, len(cells))
-	height := 1
-	for i, c := range cells {
-		lines[i] = strings.Split(c.text, "\n")
-		if len(lines[i]) > height {
-			height = len(lines[i])
-		}
-	}
-	var b strings.Builder
-	for row := 0; row < height; row++ {
-		if row > 0 {
-			b.WriteByte('\n')
-		}
-		b.WriteByte('|')
-		col := 0
-		for i, c := range cells {
-			text := ""
-			if row < len(lines[i]) {
-				text = lines[i][row]
-			}
-			// pad is never negative: spanTextWidth is computed from the same
-			// widths widenColumns/widenSpannedColumns already grew to fit this
-			// very cell's widest line (see writeTable and cellWidth).
-			pad := spanTextWidth(widths, col, c.span) - docrst.TableColumnWidth(text)
-			b.WriteString(" " + text + strings.Repeat(" ", pad) + " |")
-			col += c.span
-		}
-	}
-	return b.String()
 }
 
 // writeImageBlock renders a paragraph that is exactly one image, or

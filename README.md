@@ -156,7 +156,7 @@ question from the inline one.
 | `List` | `-` / `N.` items; a non-1 `Start` round-trips both ways as of `docutils/rst` v0.25.0+ (its own `enumerated_list` now carries a `start` attribute, read by `Parse`) — the list's own enumerator TYPE (alpha/roman) and format (`(N)`/`N)`) have no richdoc equivalent at all, so `Write` always re-renders as plain arabic `N.`, still a one-way gap on that narrower axis |
 | `CodeBlock` | `.. code:: <language>` when it has one, plain `::` when it does not |
 | `BlockQuote` | indented block |
-| `Table` | a GRID table (`+---+`), column widths computed from actual cell content, measured with `docutils/rst`'s own `TableColumnWidth` (v0.110.0+) so an East Asian Wide character counts as the two columns the grid gives it — padding by rune count made a CJK cell overflow its column, and a table this package had just parsed did not survive being written back out |
+| `Table` | a GRID table (`+---+`), column widths computed from actual cell content, measured with `docutils/rst`'s own `TableColumnWidth` (v0.110.0+) so an East Asian Wide character counts as the two columns the grid gives it — padding by rune count made a CJK cell overflow its column, and a table this package had just parsed did not survive being written back out. BOTH spans are drawn (v0.6.0+): a `ColSpan` merges the interior `|` into the cell's own content area, a `RowSpan` takes the horizontal rule out from under itself and shifts the row below, since that row's cells no longer start at column 0 |
 | `MathBlock` | `.. math::` directive |
 | `RawBlock` (block) | Format `""` or `"rst"` passes through verbatim; any OTHER format reconstructs as a real `.. raw:: FORMAT` directive — a general reST construct any reader can interpret, not something specific to this package |
 | `RawInline` | Format `""` or `"rst"` passes through verbatim; any other format is dropped — unlike the block case above, reST HAS an inline raw construct (`docutils/rst` v0.16.0+'s `` :name:`text` `` where `name` is a `.. role:: name(raw)`-registered role), but using it means emitting that registration as its own block BEFORE the paragraph currently being written, which this package's inline-rendering functions (building one paragraph's text at a time) have no way to reach back and do — a real gap, not a "nothing to reconstruct from" one like the parallel block case's old excuse used to be |
@@ -382,9 +382,12 @@ multi-line, so a cell holding both a wrapped paragraph and a literal is flattene
 whole, and one file's round trip was given up for it (1450 → 1449). A flattened
 cell beats a corrupted one.
 
-Two boundaries are left in this class and neither is a defect to fix here: 19
-files whose cell holds several blocks, which `richdoc.Cell` cannot represent at
-all, and 6 whose row-span the writer does not merge (its own doc comment says so).
+Two boundaries were left in this class. 19 files whose cell holds several
+blocks, which `richdoc.Cell` could not represent at all — `Cell.Blocks` in
+richdoc v0.5.0 closed that one — and 6 whose row-span the writer did not merge,
+closed by [Row spans](#row-spans) below. Neither was a defect to fix *there*,
+and both say what the writer's own doc comment said at the time, which is why
+that comment was the thing to go looking for.
 
 ### The reconstruction now says nothing the author did not
 
@@ -1276,6 +1279,113 @@ model.
 
 `fidprobe` 1450 → **1451**; the round trip holds at 1489 with an identical lossy set,
 for the same reason.
+
+
+### Row spans
+
+The writer kept `RowSpan` on the cell and then drew the cell as an ordinary
+one. Nothing was lost from the tree, and its own doc comment said so — "real
+complexity for a rarer construct than column-spanning, deferred rather than
+half-done" — which is why the thing to go looking for was the comment.
+
+What that costs is not one cell. A row span removes the horizontal rule from
+under itself, so the row below **starts at a different column**: drawn as an
+ordinary cell, the spanning cell re-wraps its text *and* every cell of the next
+row shifts one column left. `tabdiff` named the population — **9 of the 1564
+real-world files held a table that did not round-trip**, 8 of them with changed
+spans — and `one -m` on the smallest of them (PEP 393's) showed the model
+holding `RowSpan: 2` while the written table held no span at all.
+
+So the writer is now a placement problem before it is a drawing one (`grid.go`).
+Every cell gets a rectangle, skipping the slots a span from an earlier row has
+claimed; whatever slot no cell reached becomes an empty cell of its own, because
+a row shorter than the table is a row with HOLES and a hole has no reST
+spelling. Then one question draws the whole frame: *which cell, if any, is this
+slot inside at this line* — inside meaning strictly between the cell's own two
+rules. A rule simply stops being drawn where one cell owns both sides of it, and
+two characters that are easy to get wrong come out right for free:
+
+```
++-------+-------------------+
+|string | Python 3.2        |
+|size   +--------+----------+
+|       | 16-bit | 32-bit   |
++-------+--------+----------+
+```
+
+The spanning cell's own text keeps flowing across the rule that interrupts it —
+`size` sits ON a border line — and the `+` that opens that rule belongs to the
+cells to its RIGHT, where the span's own edge is a `|`. Both are pinned by a
+byte-exact test, because no round-trip check can say which of the two mistakes
+was made.
+
+**`tabdiff` 9 → 2, the round trip 1489 → 1496, `fidprobe` 1451 → 1456.** The
+set-diff matters more than the totals: no file JOINED the failing set, and the
++7 the round trip gained is the same 7 `tabdiff` lost, measured by two probes
+that share no code.
+
+Of the two left, one is a soft wrap folding to a space (named in `gridRow`'s
+own comment since the day a row became multi-line). The other cannot be
+written at all, and is worth the paragraph:
+
+### A row that holds no cells of its own
+
+PEP 669's table has a typo — `+ Two or more |` where a `|` belongs. docutils
+answers by reading the final rule's row as **covered by a span from above**, and
+its own doctree carries that empty `<row>` too, so the parser is faithful and
+the loss is strictly in the writing. reST has no spelling for a row that holds
+no cells of its own: a row span whose second row is empty draws exactly like one
+tall cell, so the reconstruction reads one row where the tree held two.
+
+What matters is that the writer does not TRY. Drawing the span over the empty
+row produces a cell three lines tall whose own reconstruction is one line tall —
+so the output would not be a fixed point either, and the next round trip would
+move again. Dropping the phantom row costs nothing that was ever drawn.
+
+### What `richdoc.Table` still cannot hold: a header of two rows
+
+Reading that file turned up a second loss, which no round-trip probe can see
+because both sides lose it identically. reST's `+===+` rule falls wherever the
+author puts it, so a grid table's `<thead>` may hold **several rows**;
+`richdoc.Table.Header` is one `[]Cell`, and the converter keeps the last row it
+reads. PEP 669's `Events` row — a `morecols` header above the column names —
+is dropped, and the written table is a perfectly valid one-row-header table.
+
+`headprobe` (beside the corpus) reads the doctree with the converter's own
+options and counts `<thead>` elements with more than one `<row>`: **2 of the
+1564 files**, PEP 648 and PEP 669. It stays a named gap rather than this
+round's work, because closing it means `Header [][]Cell` in richdoc — a
+breaking change to the model for two files, which is the sort of trade worth
+making deliberately and not on the way past.
+
+### The pair is fuzzed, and the first thing it broke was the judge
+
+`FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,
+tree again — and asserts three properties:
+
+- **`Write` does not panic on anything `Parse` accepted.** The writer computes a
+  table's geometry from the spans the parser found, so an input that makes those
+  disagree with the cells reaches it as an index, not as data.
+- **what `Write` emits, `Parse` reads.** A writer that emits reST its own parser
+  rejects has turned a document into an error, which is worse than losing a
+  construct.
+- **a grid table's frame is rectangular.** A table that re-parses into something
+  *else* is a fidelity defect and the corpus measures those; a table whose frame
+  is RAGGED is a corrupt document, and no round-trip check can see it, because
+  the reconstruction of a broken frame is a line block that parses perfectly
+  well.
+
+The first version looked for frames in the finished document, and the fuzzer
+broke it in **one second** with `"+++\n++-+"` — a PARAGRAPH whose two lines each
+read as a rule. Nothing in the text says which lines are a table; the tree does,
+so the check now writes each table the tree holds **on its own**, where every
+framed line is known to be the frame. That input is kept as a seed.
+
+716,714 executions over 483 interesting inputs found nothing else. Spans reach
+the writer only from the parser's computed `morecols`/`morerows`, bounded by the
+source's own geometry — a `grep` across the org for anything else that sets
+`Cell.ColSpan` finds nothing, so there is no path by which a document declares
+a span the grid has to allocate for.
 
 
 ## Toolchain
