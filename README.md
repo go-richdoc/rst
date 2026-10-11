@@ -1502,6 +1502,47 @@ indentation accounts for the first four, because a payload's second line is no
 longer at column 0.
 
 
+### Two blocks that would run together need reST's own punctuation
+
+A blank line does not end every construct. A list item's content continues
+through one, two block quotes separated by one are a single quote with two
+paragraphs, and two bullet lists are one list with all the items. Each pair was
+asked of the reference rather than reasoned about, and the separator reST
+answers with is an **empty comment**.
+
+The witness is pytest's skipping guide, and it is a document nobody wrote by
+hand: its `1.` items carry continuations indented two spaces where the
+enumerator is three wide, so reST reads the code blocks as quotes OUTSIDE the
+list. Written back at the ordinary quote indent they became the items' own
+content, and a 1-item list came back as a 3-item one. Six files.
+
+Two adjacent ordered lists are left alone unless the second would CONTINUE the
+first's numbering, which is the only case docutils merges: asked for `1. a`
+then `1. b` it answers two `<enumerated_list>`s, because an enumerator that
+does not continue starts a new list.
+
+**And the separator had to stop being content.** An empty comment used to
+convert to a `RawBlock`, so a document that needed one could never be a fixed
+point — two blocks out, three back. It is punctuation by definition and there is
+no text to lose, so it no longer reaches the tree; 9 of the 1564 files write one
+by hand, 12 occurrences, and the writer puts one back wherever it is still
+needed. That changed a pinned unit case, deliberately, with the reason recorded
+beside it.
+
+| | v0.9.0 | v0.10.0 |
+|---|---|---|
+| round trip | 1519 | **1525** |
+| `fidprobe`, same boundary set | 1456 | **1461** |
+
+`fidprobe` gained a named boundary for it, and the boundary is limited to the
+EMPTY comment: a comment carrying text is something an author wrote, and a rule
+that ate those would hide a real loss while making the headline rise. Its own
+test asserts both directions. The baseline above is the proof it is not a
+retroactive loosening — applied to the OLD writer the boundary changes nothing,
+because no file had an empty-comment difference before the writer started
+emitting them.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,

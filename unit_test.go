@@ -633,9 +633,15 @@ func TestParse(t *testing.T) {
 			richdoc.New().RawBlock("rst", ".. [#named] Named auto orphan.").Doc(),
 		},
 		{
-			"an empty comment becomes a bare RawBlock",
+			// Changed deliberately in v0.10.0, where the writer started
+			// emitting ".." as a SEPARATOR (see blocksWouldMerge): an empty
+			// comment is punctuation, and a punctuation mark the tree carries
+			// as a block makes a document that needs one unable to be a fixed
+			// point -- two blocks out, three back. There is no text to lose,
+			// and the writer puts one back wherever it is still needed.
+			"an empty comment is punctuation and does not reach the tree",
 			".. \n",
-			richdoc.New().RawBlock("rst", "..").Doc(),
+			richdoc.New().Doc(),
 		},
 		{
 			"an argument-less, body-less directive becomes a bare header RawBlock",
