@@ -188,10 +188,66 @@ func (w *writer) writeFootnoteDefs() string {
 
 func (w *writer) writeBlocks(blocks []richdoc.Block) string {
 	parts := make([]string, 0, len(blocks))
-	for _, b := range blocks {
+	for i, b := range blocks {
+		if i > 0 && blocksWouldMerge(blocks[i-1], b) {
+			// reST's own separator between two constructs that would
+			// otherwise run together: an EMPTY COMMENT. See
+			// blocksWouldMerge for which pairs need it and why.
+			parts = append(parts, "..")
+		}
 		parts = append(parts, w.writeBlock(b, 1))
 	}
 	return strings.Join(parts, "\n\n")
+}
+
+// blocksWouldMerge reports whether two adjacent blocks, written one after the
+// other with a blank line between them, would come back as ONE block.
+//
+// A blank line does not end every construct. A list item's content continues
+// through one, so an indented block written after a list joins the last item;
+// two block quotes separated by a blank line are one quote with two
+// paragraphs; and two bullet lists are one list with all the items. The
+// reference was asked for each pair rather than reasoned about, and answers an
+// empty comment ("..") separates all three -- the output then holds
+// <list>, <comment>, <quote> where it held <list><quote> before.
+//
+// The witness is pytest's skipping guide, and it is a document nobody wrote by
+// hand: its "1." items carry continuations indented TWO spaces where the
+// enumerator is three wide, so reST reads the code blocks as quotes OUTSIDE
+// the list. Written back at the ordinary quote indent they became the items'
+// own content, and a 1-item list came back as a 3-item one. Six files.
+//
+// Two adjacent ORDERED lists are left alone unless the second would continue
+// the first's numbering, which is the only case docutils merges: asked for
+// "1. a" then "1. b" it answers two <enumerated_list>s, because an enumerator
+// that does not continue starts a new list.
+//
+// A comment is not in the richdoc model, so nothing reads it back: the
+// reconstruction's tree is the same with or without it, which is exactly what
+// makes it usable as punctuation.
+func blocksWouldMerge(prev, next richdoc.Block) bool {
+	switch a := prev.(type) {
+	case richdoc.List:
+		switch b := next.(type) {
+		case richdoc.BlockQuote:
+			return true
+		case richdoc.List:
+			if a.Ordered != b.Ordered {
+				return false
+			}
+			if !a.Ordered {
+				// Every bullet list here is written with "-", so two of them
+				// always merge.
+				return true
+			}
+			return b.Start == a.Start+len(a.Items)
+		}
+	case richdoc.BlockQuote:
+		if _, ok := next.(richdoc.BlockQuote); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // writeBlock renders one block. level is the current section-nesting depth,

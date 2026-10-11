@@ -719,6 +719,19 @@ func (c *converter) convertBlockNode(n doctree.Node, level int) []richdoc.Block 
 		// no existing fixture exercises a math directive.
 		return []richdoc.Block{richdoc.MathBlock{TeX: doctree.AsText(el)}}
 	case doctree.TagComment:
+		// An EMPTY comment is punctuation, not content. reST's own answer to
+		// two constructs that would run together is "..", and [Write] emits
+		// one wherever [blocksWouldMerge] says a pair needs it -- so carrying
+		// it in the tree would make the separator a BLOCK, and a document
+		// that needs one could never be a fixed point: the source's two
+		// blocks come back as three.
+		//
+		// Nothing is lost: there is no text. 9 of the 1564 real-world files
+		// write one by hand, 12 occurrences, and in each the writer puts it
+		// back where it is still needed and leaves it out where it is not.
+		if strings.TrimSpace(doctree.AsText(el)) == "" {
+			return nil
+		}
 		return []richdoc.Block{richdoc.RawBlock{Format: "rst", Text: rawComment(el)}}
 	case doctree.TagRaw:
 		// docutils/rst v0.15.0+ (Options.RawEnabled, on by default) — the
