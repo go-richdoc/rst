@@ -1543,6 +1543,61 @@ because no file had an empty-comment difference before the writer started
 emitting them.
 
 
+### What the remaining 39 are
+
+`classdiff` (beside the corpus) refines the round trip's answer by one level:
+where `rtprobe` says "16 files are `Heading -> Heading`", it says what about
+the heading differs, and names the files. The queue it prints is now mostly
+boundaries, and they are worth stating because each one was mistaken for a
+defect first.
+
+**16 — a heading's id shifts by one** (`git-1` → `git`). The cause is not in
+the heading. PEP 374 writes `.. _git: http://www.git-scm.com/`, an EXTERNAL
+hyperlink target, which claims the name `git`; the eight sections titled "git"
+therefore become `git-1` … `git-8`. Reference resolution puts the URI into
+every reference that used it, so the target itself has nothing left to carry
+and is dropped — and with the name freed, the first section takes `git` and
+every id moves up one.
+
+Carrying it would mean carrying a target node in the model. `targetprobe` says
+what that costs: the corpus holds **3988 external targets** and 188 indirect
+ones, against **950 internal** (`.. _name:`, a point anchor) in 251 files. The
+external ones are bookkeeping whose information is already in the links; adding
+~4000 blocks to the trees to recover an id string is the wrong trade, and the
+internal ones are a real gap with a real encoding — `richdoc.Anchor` already
+exists and `go-richdoc/latex` already writes one as `\label{}` — left as named
+work rather than started half way.
+
+**11 — a code block loses a leading space.** This one is unrepresentable, and
+the reference says why. A directive's content indent is fixed by the first line
+of the directive BLOCK, which is its options line when it has one:
+
+```rst
+.. code-block:: python
+   :force:
+
+    logging.debug(...)
+```
+
+Options at 3, content at 4, so every content line keeps one space — asked with
+a directive docutils knows, `.. code:: python` with `:number-lines:`, it
+answers `'1  logging.debug(1)'` against `'1 logging.debug(1)'` for content at 3.
+Our parser is right. The writer has no options to emit (`:force:` is Sphinx's,
+and inventing one would be worse), and with no options line the re-parse takes
+the content's own indent and the space is gone. A code block whose every line
+shares a leading space cannot be written as a directive at all.
+
+**2 — the body of a COMMENT is re-indented**, from seven spaces to three. `..
+sequenceDiagram` has no `::`, so it is a comment, which renders as nothing in
+every output. Named for completeness: it is the least consequential difference
+on the board.
+
+**2 tables**, both named in [Row spans](#row-spans) above, and 8 singletons.
+
+That is 1525 of 1564 trees identical, with the remainder either unrepresentable
+in reST or a model gap whose price is written down.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,
