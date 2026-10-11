@@ -171,34 +171,87 @@ func escapeBlockStart(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// collapseSoftWrap removes the INDENTATION that follows a newline inside a text
-// node, and keeps the newline.
+// escapeSoftWrapIndent writes the INDENTATION that follows a newline inside a
+// text node the way reST spells it: a backslash, then one space more than the
+// indentation itself.
 //
-// It is the indentation that does the damage: a continuation deeper than its own
-// first line is a definition or a block quote, so PEP 262's escaped wrap
-// ("...around 28\n\   Dec 1999)") came back as a DEFINITION LIST. The line break
-// itself is harmless -- reST folds it back to a space -- and keeping it keeps the
-// author's layout, which is also what the surrounding indentBlock expects to
-// re-indent uniformly. Collapsing the break to a space instead reflowed every
-// reconstructed body onto one line, which two existing tests caught at once.
-func collapseSoftWrap(s string) string {
+// That arithmetic is the reference's, measured rather than reasoned -- a
+// backslash escapes the ONE whitespace character after it and is itself
+// removed, so "\" plus three spaces reads back as two:
+//
+//	\   two spaces   ->  "\n  "
+//	\  one space     ->  "\n "
+//	\ nothing        ->  "\n"
+//
+// It used to drop the indentation instead, and the reason was sound as far as
+// it went: a continuation deeper than its own first line is a definition or a
+// block quote, so re-emitting PEP 262's wrap ("...around 28\n\   Dec 1999)")
+// as a plain indented line came back as a DEFINITION LIST. The backslash is
+// what the source has and what makes the line legal -- its first character is
+// not a space, so nothing is indented -- and dropping it cost 14 of the 1564
+// real-world files their own text nodes.
+//
+// A TAB in that run is left dropped, and cannot arise from a document anyway:
+// docutils expands tabs when it READS the source (statemachine.string2lines),
+// so "\" followed by a tab comes back as six spaces, not a tab, and no text
+// node built from a source can hold one there.
+//
+// It runs AFTER escapeText, which would otherwise double the backslash this
+// adds into a literal one.
+func escapeSoftWrapIndent(s string) string {
 	if !strings.ContainsAny(s, "\n\r") {
 		return s
 	}
 	var b strings.Builder
-	b.Grow(len(s))
-	afterBreak := false
-	for _, r := range s {
-		switch {
-		case r == '\n' || r == '\r':
-			afterBreak = true
-			b.WriteRune(r)
-		case afterBreak && (r == ' ' || r == '\t'):
-			// the indentation that followed the break: dropped
-		default:
-			afterBreak = false
-			b.WriteRune(r)
+	b.Grow(len(s) + 8)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		b.WriteByte(c)
+		if c != '\n' && c != '\r' {
+			continue
 		}
+		j := i + 1
+		for j < len(s) && s[j] == ' ' {
+			j++
+		}
+		if j == i+1 {
+			continue
+		}
+		if j < len(s) && (s[j] == '\t') {
+			// A tab in the run: dropped, as before, and the run with it.
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
+				j++
+			}
+			i = j - 1
+			continue
+		}
+		b.WriteByte('\\')
+		b.WriteString(strings.Repeat(" ", j-i))
+		i = j - 1
 	}
 	return b.String()
+}
+
+// dropDanglingWrapEscape removes an escape [escapeSoftWrapIndent] left with
+// nothing after it on its line. Such a line rstrips to a lone backslash, and
+// the reference reads THAT as a title-underline candidate -- "Possible title
+// underline, too short for the title." -- so the escape would trade a dropped
+// space for a diagnostic in the document.
+//
+// It cannot arise from a paragraph any more (docutils/rst v0.141.0 rstrips a
+// paragraph's text, so its last text node does not end in whitespace), which
+// is exactly why it is guarded here rather than relied upon: this function is
+// the proof, not the parser's current behaviour.
+func dropDanglingWrapEscape(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		t := strings.TrimRight(l, " ")
+		if t == "\\" {
+			lines[i] = ""
+		}
+	}
+	return strings.Join(lines, "\n")
 }

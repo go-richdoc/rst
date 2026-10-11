@@ -1418,6 +1418,51 @@ Round trip **1504 → 1505**, and `destprobe` — a different probe, asking whet
 a reference still points where it did — **6 → 5** on the same change.
 
 
+### An escaped continuation, written back the way reST spells it
+
+A paragraph can carry a hanging indent, and reST spells it with a backslash:
+
+```rst
+[1] Microsoft Windows APIs
+\   https://msdn.example.com/
+```
+
+docutils keeps that indentation in the text node — `"[1] Microsoft Windows
+APIs\n  "` — and the writer used to DROP it. The reason was sound as far as it
+went: re-emitted as a plain indented line, a continuation deeper than its own
+first line is a definition list, and PEP 262's wrap came back as exactly that.
+The backslash is what makes the line legal, because the line's first character
+is then not a space.
+
+The arithmetic is the reference's, measured one space at a time rather than
+reasoned: a backslash escapes the ONE whitespace character after it and is
+itself removed, so writing N spaces of indentation takes N+1.
+
+| written | read back |
+|---|---|
+| `\` + three spaces | `\n` + two spaces |
+| `\` + two spaces | `\n` + one space |
+| `\` + one space | `\n` |
+
+There is a second half, and it is the reason this is not a one-line change. An
+escape with nothing after it on its line rstrips to a **lone backslash**, which
+the reference reads as a title-underline candidate and answers with "Possible
+title underline, too short for the title." — so the escape would trade a
+dropped space for a diagnostic in the document. It is dropped at the join
+instead. That cannot arise from a parse any more (a paragraph's text is
+rstripped since `docutils/rst` v0.141.0), which is why it is GUARDED rather
+than relied upon: the guard is the proof, not the parser's current behaviour.
+
+A tab in that run stays dropped, and cannot arise from a document at all:
+docutils expands tabs when it reads the source, so a backslash followed by a
+tab comes back as six spaces.
+
+Round trip **1505 → 1519 of 1564** — the two whitespace causes, 8 files and 6,
+both gone from the class table — with `fidprobe` (1456), the character count
+(1564/1564), the content model (1560 valid) and the diagnostics (5 files, 8
+messages) all unchanged.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,
