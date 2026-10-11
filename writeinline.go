@@ -65,6 +65,10 @@ func okAfter(r rune) bool {
 // A converter's output that no longer says what its input said is the worst
 // kind of loss, because nothing reports it.
 func (w *writer) writeInlines(nodes []richdoc.Inline) string {
+	return dropDanglingWrapEscape(w.joinInlines(nodes))
+}
+
+func (w *writer) joinInlines(nodes []richdoc.Inline) string {
 	var b strings.Builder
 	prev := ""
 	for _, n := range nodes {
@@ -103,10 +107,11 @@ func (w *writer) writeInline(n richdoc.Inline) string {
 		// four spaces turned the paragraph into a DEFINITION LIST: the first
 		// line became a term and the rest its definition.
 		//
-		// Collapsing the break to a single space is what reST means by it. A
-		// HARD break is richdoc.LineBreak, a different node, so this cannot eat
+		// It is now written back as the source spells it -- see
+		// escapeSoftWrapIndent, which is where that arithmetic lives. A HARD
+		// break is richdoc.LineBreak, a different node, so none of this can eat
 		// one.
-		return escapeText(collapseSoftWrap(v.Value))
+		return escapeSoftWrapIndent(escapeText(v.Value))
 	case richdoc.Emph:
 		return "*" + w.writeInlines(v.Inlines) + "*"
 	case richdoc.Strong:

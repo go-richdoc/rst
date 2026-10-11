@@ -1418,6 +1418,90 @@ Round trip **1504 → 1505**, and `destprobe` — a different probe, asking whet
 a reference still points where it did — **6 → 5** on the same change.
 
 
+### An escaped continuation, written back the way reST spells it
+
+A paragraph can carry a hanging indent, and reST spells it with a backslash:
+
+```rst
+[1] Microsoft Windows APIs
+\   https://msdn.example.com/
+```
+
+docutils keeps that indentation in the text node — `"[1] Microsoft Windows
+APIs\n  "` — and the writer used to DROP it. The reason was sound as far as it
+went: re-emitted as a plain indented line, a continuation deeper than its own
+first line is a definition list, and PEP 262's wrap came back as exactly that.
+The backslash is what makes the line legal, because the line's first character
+is then not a space.
+
+The arithmetic is the reference's, measured one space at a time rather than
+reasoned: a backslash escapes the ONE whitespace character after it and is
+itself removed, so writing N spaces of indentation takes N+1.
+
+| written | read back |
+|---|---|
+| `\` + three spaces | `\n` + two spaces |
+| `\` + two spaces | `\n` + one space |
+| `\` + one space | `\n` |
+
+There is a second half, and it is the reason this is not a one-line change. An
+escape with nothing after it on its line rstrips to a **lone backslash**, which
+the reference reads as a title-underline candidate and answers with "Possible
+title underline, too short for the title." — so the escape would trade a
+dropped space for a diagnostic in the document. It is dropped at the join
+instead. That cannot arise from a parse any more (a paragraph's text is
+rstripped since `docutils/rst` v0.141.0), which is why it is GUARDED rather
+than relied upon: the guard is the proof, not the parser's current behaviour.
+
+A tab in that run stays dropped, and cannot arise from a document at all:
+docutils expands tabs when it reads the source, so a backslash followed by a
+tab comes back as six spaces.
+
+Round trip **1505 → 1519 of 1564** — the two whitespace causes, 8 files and 6,
+both gone from the class table — with `fidprobe` (1456), the character count
+(1564/1564), the content model (1560 valid) and the diagnostics (5 files, 8
+messages) all unchanged.
+
+
+### A paragraph's second line could become a section title
+
+This one is an INJECTION, and it was found by extending an instrument rather
+than by reading the writer.
+
+`injectprobe` places a block construct where only text should be and asks
+whether it became a node. Every payload it had was a **single line at the start
+of a text node** — so none of them could ever reach a paragraph's *second*
+line, and its answer of 0 was true and said nothing about that position. A
+payload set inherits the shape of the writer it was written against. Five
+positions were added, each putting the payload after a soft wrap, and the
+probe reported an injection immediately.
+
+docutils' Text state looks at exactly ONE line past the first before it
+commits, and a uniform run there is an UNDERLINE:
+
+| text | read back as |
+|---|---|
+| `"first line\n----"` | a `<title>`, plus "Title underline too short." |
+| `"first line\n--"` | the text, plus a "Possible title underline" INFO |
+| `"a\nb\n----"` | a plain paragraph — line 3 carries no such meaning |
+
+So a paragraph carrying `"first line\n----"` was written verbatim and came back
+as a **section title**: text became document structure. A leading backslash
+stops it, and the reference then reads the text node back exactly.
+
+The rule stays narrow on purpose — the second line of a block, nothing else.
+The README used to say "only the FIRST line is escaped, and that is the rule
+rather than a shortcut"; that remains true for bullets, enumerators and option
+lists, which are content once a paragraph has started, and it has exactly this
+one exception. Escaping every line is what corrupted inline literals when it
+was first tried.
+
+**Injections over the extended probe: 5 before this round's two writer changes,
+1 after the first, 0 after this one.** Keeping an escaped continuation's
+indentation accounts for the first four, because a payload's second line is no
+longer at column 0.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,

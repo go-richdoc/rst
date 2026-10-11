@@ -103,6 +103,30 @@ func startsWithFieldMarker(s string) bool {
 	return false
 }
 
+// isUnderline reports a line of TWO or more of one punctuation character,
+// which is what docutils will read as a section underline when it sits
+// directly under the first line of a block. Two is the threshold rather than
+// four because the shorter run still changes the document: the reference keeps
+// the text and adds a "Possible title underline, too short for the title."
+// INFO to it, and a diagnostic nobody wrote is the thing this file exists to
+// prevent. Four or more is worse -- the paragraph becomes a <title>.
+func isUnderline(s string) bool {
+	s = strings.TrimRight(s, " ")
+	r := []rune(s)
+	if len(r) < 2 {
+		return false
+	}
+	if !strings.ContainsRune("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", r[0]) {
+		return false
+	}
+	for _, c := range r[1:] {
+		if c != r[0] {
+			return false
+		}
+	}
+	return true
+}
+
 // isAdornment reports a line of four or more of ONE punctuation character,
 // which reST reads as a transition or a section underline. Go's regexp is RE2
 // and has no backreference, so this is code rather than a pattern -- the
@@ -126,12 +150,33 @@ func isAdornment(s string) bool {
 	return true
 }
 
-// Only the FIRST line is escaped, and that is the rule rather than a
-// shortcut: docutils reads a whole text block before deciding what it is, so a
-// line shaped like an option list or a bullet is plain content once a paragraph
-// has started. Escaping every line corrupted the ones INSIDE an inline literal
+// Only the first line is escaped, AND THE SECOND WHEN IT IS AN ADORNMENT, and
+// that pair is the rule rather than a shortcut.
+//
+// docutils reads a whole text block before deciding what it is, so a line
+// shaped like an option list or a bullet is plain content once a paragraph has
+// started, and escaping every line corrupted the ones INSIDE an inline literal
 // -- "“python\n-m zipapp“" became "python \-m zipapp", a backslash in
 // verbatim content -- which four corpus files caught immediately.
+//
+// The exception is real and was found by a probe rather than by reading: the
+// Text state looks at exactly ONE more line before it commits, and a uniform
+// run there is an UNDERLINE. Measured against the reference, by line:
+//
+//	line 2, 4+ characters   "first line\n----"  -> a <title>, plus "Title
+//	                                               underline too short."
+//	line 2, 2-3 characters  "first line\n--"    -> the text survives with a
+//	                                               "Possible title underline"
+//	                                               INFO added to the document
+//	line 3 or later         "a\nb\n----"        -> plain paragraph text
+//
+// So a paragraph carrying "first line\n----" was written out verbatim and came
+// back as a SECTION TITLE: text became document structure. A leading backslash
+// stops it, and the reference then reads the text node back exactly -- the
+// backslash is removed and nothing else changes.
+//
+// This is narrow on purpose: the second line of a block, nothing else, which
+// is the only line docutils gives that meaning to.
 func escapeBlockStart(text string) string {
 	lines := strings.Split(text, "\n")
 	// The first line of each PARAGRAPH, not just of the text: a blank line
@@ -141,10 +186,20 @@ func escapeBlockStart(text string) string {
 	// are separated by a blank line since this writer started keeping the break
 	// (see cellInlines).
 	atBlockStart := true
+	secondLine := false
 	for i, l := range lines {
 		if !atBlockStart {
 			if strings.TrimSpace(l) == "" {
 				atBlockStart = true
+				secondLine = false
+				continue
+			}
+			if secondLine {
+				secondLine = false
+				trimmed := strings.TrimLeft(l, " ")
+				if isUnderline(trimmed) {
+					lines[i] = l[:len(l)-len(trimmed)] + `\` + trimmed
+				}
 			}
 			continue
 		}
@@ -152,6 +207,7 @@ func escapeBlockStart(text string) string {
 			continue
 		}
 		atBlockStart = false
+		secondLine = true
 		trimmed := strings.TrimLeft(l, " ")
 		if trimmed == "" {
 			continue
@@ -171,34 +227,87 @@ func escapeBlockStart(text string) string {
 	return strings.Join(lines, "\n")
 }
 
-// collapseSoftWrap removes the INDENTATION that follows a newline inside a text
-// node, and keeps the newline.
+// escapeSoftWrapIndent writes the INDENTATION that follows a newline inside a
+// text node the way reST spells it: a backslash, then one space more than the
+// indentation itself.
 //
-// It is the indentation that does the damage: a continuation deeper than its own
-// first line is a definition or a block quote, so PEP 262's escaped wrap
-// ("...around 28\n\   Dec 1999)") came back as a DEFINITION LIST. The line break
-// itself is harmless -- reST folds it back to a space -- and keeping it keeps the
-// author's layout, which is also what the surrounding indentBlock expects to
-// re-indent uniformly. Collapsing the break to a space instead reflowed every
-// reconstructed body onto one line, which two existing tests caught at once.
-func collapseSoftWrap(s string) string {
+// That arithmetic is the reference's, measured rather than reasoned -- a
+// backslash escapes the ONE whitespace character after it and is itself
+// removed, so "\" plus three spaces reads back as two:
+//
+//	\   two spaces   ->  "\n  "
+//	\  one space     ->  "\n "
+//	\ nothing        ->  "\n"
+//
+// It used to drop the indentation instead, and the reason was sound as far as
+// it went: a continuation deeper than its own first line is a definition or a
+// block quote, so re-emitting PEP 262's wrap ("...around 28\n\   Dec 1999)")
+// as a plain indented line came back as a DEFINITION LIST. The backslash is
+// what the source has and what makes the line legal -- its first character is
+// not a space, so nothing is indented -- and dropping it cost 14 of the 1564
+// real-world files their own text nodes.
+//
+// A TAB in that run is left dropped, and cannot arise from a document anyway:
+// docutils expands tabs when it READS the source (statemachine.string2lines),
+// so "\" followed by a tab comes back as six spaces, not a tab, and no text
+// node built from a source can hold one there.
+//
+// It runs AFTER escapeText, which would otherwise double the backslash this
+// adds into a literal one.
+func escapeSoftWrapIndent(s string) string {
 	if !strings.ContainsAny(s, "\n\r") {
 		return s
 	}
 	var b strings.Builder
-	b.Grow(len(s))
-	afterBreak := false
-	for _, r := range s {
-		switch {
-		case r == '\n' || r == '\r':
-			afterBreak = true
-			b.WriteRune(r)
-		case afterBreak && (r == ' ' || r == '\t'):
-			// the indentation that followed the break: dropped
-		default:
-			afterBreak = false
-			b.WriteRune(r)
+	b.Grow(len(s) + 8)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		b.WriteByte(c)
+		if c != '\n' && c != '\r' {
+			continue
 		}
+		j := i + 1
+		for j < len(s) && s[j] == ' ' {
+			j++
+		}
+		if j == i+1 {
+			continue
+		}
+		if j < len(s) && (s[j] == '\t') {
+			// A tab in the run: dropped, as before, and the run with it.
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t') {
+				j++
+			}
+			i = j - 1
+			continue
+		}
+		b.WriteByte('\\')
+		b.WriteString(strings.Repeat(" ", j-i))
+		i = j - 1
 	}
 	return b.String()
+}
+
+// dropDanglingWrapEscape removes an escape [escapeSoftWrapIndent] left with
+// nothing after it on its line. Such a line rstrips to a lone backslash, and
+// the reference reads THAT as a title-underline candidate -- "Possible title
+// underline, too short for the title." -- so the escape would trade a dropped
+// space for a diagnostic in the document.
+//
+// It cannot arise from a paragraph any more (docutils/rst v0.141.0 rstrips a
+// paragraph's text, so its last text node does not end in whitespace), which
+// is exactly why it is guarded here rather than relied upon: this function is
+// the proof, not the parser's current behaviour.
+func dropDanglingWrapEscape(s string) string {
+	if !strings.Contains(s, "\\") {
+		return s
+	}
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		t := strings.TrimRight(l, " ")
+		if t == "\\" {
+			lines[i] = ""
+		}
+	}
+	return strings.Join(lines, "\n")
 }
