@@ -74,23 +74,55 @@ func TestProseIsSetInATextFaceAndNotAMathsOne(t *testing.T) {
 	}
 }
 
-// TestEmphasisStillComesBackRoman records a defect that is NOT in this
-// repository, together with the measurement that found it.
+// TestItalicComesBackInTheItalicFace is the HALF of go-tex/engine#590 that
+// closed, and the assertion its tripwire asked for.
+//
+// Until go-tex/engine v0.252.0 this package supplied all three faces and the
+// engine ignored two of them: a paragraph carrying both **strong** and
+// *emphasis* left exactly ONE face in the file, the roman.
+// TestEmphasisStillComesBackRoman asserted that, deliberately, so that it
+// would fail the day the engine started honouring them -- "the day to delete
+// it and assert the opposite". That day was 2026-10-11, and the measurement
+// says the opposite is only half true:
+//
+//	"the quick brown fox"           -> [Lora-Regular]
+//	"plain **bold** and *italic*."  -> [Lora-Regular Lora-Italic]
+//	"plain **bold** here."          -> [Lora-Regular]
+//	"plain *italic* here."          -> [Lora-Regular Lora-Italic]
+//
+// So the tripwire is SPLIT rather than removed: italic is asserted here, bold
+// keeps its own below. Reading /BaseFont off the finished PDF rather than
+// checking that the right Options were passed -- asserting the call proves the
+// call, not the page.
+func TestItalicComesBackInTheItalicFace(t *testing.T) {
+	faces := embedded(doc(t, "plain *italic* here.\n"))
+	italic := false
+	for _, f := range faces {
+		if strings.Contains(strings.ToLower(f), "italic") {
+			italic = true
+		}
+	}
+	if !italic {
+		t.Errorf("emphasis is set in %v, with no italic face among them", faces)
+	}
+}
+
+// TestBoldStillComesBackRoman is the half that is still open, and it asserts
+// what is TRUE TODAY for the same reason its predecessor did: a test that
+// skips asserts nothing and quietly stops being about anything, where this one
+// fails the day go-tex/engine honours BoldFont too -- which is the day to
+// delete it and assert that it does.
 //
 // ⛔ go-tex/engine's Options carry BoldFont and ItalicFont, documented as bound
-// to \bf so that \textbf really bolds. This package supplies all three faces.
-// They are INERT: a paragraph carrying both **strong** and *emphasis* leaves
-// exactly one face in the file, the roman. See go-tex/engine#590.
-//
-// So this asserts what is TRUE TODAY rather than skipping. A test that skips
-// asserts nothing and quietly stops being about anything; this one fails the
-// day the engine starts honouring the faces, which is the day to delete it and
-// assert the opposite.
-func TestEmphasisStillComesBackRoman(t *testing.T) {
-	faces := embedded(doc(t, "plain **bold** and *italic*.\n"))
-	if len(faces) != 1 {
-		t.Errorf("the engine now embeds %d faces (%v) — if it honours bold and italic, "+
-			"this test has served its purpose: delete it and assert that it does",
-			len(faces), faces)
+// to \bf so that \textbf really bolds. This package supplies both. As of
+// engine v0.252.0 the italic one works and the bold one does not: a paragraph
+// whose only markup is **bold** leaves the roman face alone in the file.
+func TestBoldStillComesBackRoman(t *testing.T) {
+	faces := embedded(doc(t, "plain **bold** here.\n"))
+	for _, f := range faces {
+		if strings.Contains(strings.ToLower(f), "bold") {
+			t.Errorf("the engine now embeds a bold face (%v) \u2014 if it honours BoldFont, "+
+				"this test has served its purpose: delete it and assert that it does", faces)
+		}
 	}
 }
