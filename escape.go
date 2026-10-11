@@ -103,6 +103,30 @@ func startsWithFieldMarker(s string) bool {
 	return false
 }
 
+// isUnderline reports a line of TWO or more of one punctuation character,
+// which is what docutils will read as a section underline when it sits
+// directly under the first line of a block. Two is the threshold rather than
+// four because the shorter run still changes the document: the reference keeps
+// the text and adds a "Possible title underline, too short for the title."
+// INFO to it, and a diagnostic nobody wrote is the thing this file exists to
+// prevent. Four or more is worse -- the paragraph becomes a <title>.
+func isUnderline(s string) bool {
+	s = strings.TrimRight(s, " ")
+	r := []rune(s)
+	if len(r) < 2 {
+		return false
+	}
+	if !strings.ContainsRune("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~", r[0]) {
+		return false
+	}
+	for _, c := range r[1:] {
+		if c != r[0] {
+			return false
+		}
+	}
+	return true
+}
+
 // isAdornment reports a line of four or more of ONE punctuation character,
 // which reST reads as a transition or a section underline. Go's regexp is RE2
 // and has no backreference, so this is code rather than a pattern -- the
@@ -126,12 +150,33 @@ func isAdornment(s string) bool {
 	return true
 }
 
-// Only the FIRST line is escaped, and that is the rule rather than a
-// shortcut: docutils reads a whole text block before deciding what it is, so a
-// line shaped like an option list or a bullet is plain content once a paragraph
-// has started. Escaping every line corrupted the ones INSIDE an inline literal
+// Only the first line is escaped, AND THE SECOND WHEN IT IS AN ADORNMENT, and
+// that pair is the rule rather than a shortcut.
+//
+// docutils reads a whole text block before deciding what it is, so a line
+// shaped like an option list or a bullet is plain content once a paragraph has
+// started, and escaping every line corrupted the ones INSIDE an inline literal
 // -- "“python\n-m zipapp“" became "python \-m zipapp", a backslash in
 // verbatim content -- which four corpus files caught immediately.
+//
+// The exception is real and was found by a probe rather than by reading: the
+// Text state looks at exactly ONE more line before it commits, and a uniform
+// run there is an UNDERLINE. Measured against the reference, by line:
+//
+//	line 2, 4+ characters   "first line\n----"  -> a <title>, plus "Title
+//	                                               underline too short."
+//	line 2, 2-3 characters  "first line\n--"    -> the text survives with a
+//	                                               "Possible title underline"
+//	                                               INFO added to the document
+//	line 3 or later         "a\nb\n----"        -> plain paragraph text
+//
+// So a paragraph carrying "first line\n----" was written out verbatim and came
+// back as a SECTION TITLE: text became document structure. A leading backslash
+// stops it, and the reference then reads the text node back exactly -- the
+// backslash is removed and nothing else changes.
+//
+// This is narrow on purpose: the second line of a block, nothing else, which
+// is the only line docutils gives that meaning to.
 func escapeBlockStart(text string) string {
 	lines := strings.Split(text, "\n")
 	// The first line of each PARAGRAPH, not just of the text: a blank line
@@ -141,10 +186,20 @@ func escapeBlockStart(text string) string {
 	// are separated by a blank line since this writer started keeping the break
 	// (see cellInlines).
 	atBlockStart := true
+	secondLine := false
 	for i, l := range lines {
 		if !atBlockStart {
 			if strings.TrimSpace(l) == "" {
 				atBlockStart = true
+				secondLine = false
+				continue
+			}
+			if secondLine {
+				secondLine = false
+				trimmed := strings.TrimLeft(l, " ")
+				if isUnderline(trimmed) {
+					lines[i] = l[:len(l)-len(trimmed)] + `\` + trimmed
+				}
 			}
 			continue
 		}
@@ -152,6 +207,7 @@ func escapeBlockStart(text string) string {
 			continue
 		}
 		atBlockStart = false
+		secondLine = true
 		trimmed := strings.TrimLeft(l, " ")
 		if trimmed == "" {
 			continue
