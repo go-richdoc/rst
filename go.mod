@@ -6,7 +6,7 @@ require (
 	github.com/go-docutils/docutils v0.141.0
 	github.com/go-opentype/fonts v0.12.0
 	github.com/go-richdoc/richdoc v0.6.0
-	github.com/go-tex/engine v0.252.0
+	github.com/go-tex/engine v0.256.0
 )
 
 require (
