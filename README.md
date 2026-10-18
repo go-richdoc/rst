@@ -1562,11 +1562,25 @@ every id moves up one.
 Carrying it would mean carrying a target node in the model. `targetprobe` says
 what that costs: the corpus holds **3988 external targets** and 188 indirect
 ones, against **950 internal** (`.. _name:`, a point anchor) in 251 files. The
-external ones are bookkeeping whose information is already in the links; adding
-~4000 blocks to the trees to recover an id string is the wrong trade, and the
-internal ones are a real gap with a real encoding — `richdoc.Anchor` already
-exists and `go-richdoc/latex` already writes one as `\label{}` — left as named
-work rather than started half way.
+external ones are bookkeeping whose information is already in the links, so
+adding ~4000 blocks to the trees to recover an id string is the wrong trade.
+
+**⛔ The sentence that stood here was wrong**, and it is worth leaving the
+correction visible. It called the internal targets "a real gap … left as named
+work", which they have not been since PR #152 (in `v0.1.0`): an internal target
+no heading claims is kept as its own reST source, which is what `RawBlock` is
+documented for. The paragraph was written from the memory of designing that,
+not from a measurement of it. **`targetprobe`, asked to check the CONVERTER
+rather than infer from the model, answers 809 of the 950 carried and 141 not,
+across 36 files** — and PEP 249, which holds 94 of them, writes all 94 back.
+
+What the 141 are is a narrower thing than a missing feature:
+
+| 49 | a chain of labels on one destination (`.. _a:` `.. _b:` then a title) — `Heading.ID` holds one, and the rest become reference ALIASES, so links still resolve; the extra NAME is what is gone |
+| 35 | before a definition list |
+| 17 | last in the document, with nothing after to name |
+| 13 | before a section, as the non-chosen member of a chain |
+| 12 + 7 + 2 | before a directive, a paragraph, or last in a paragraph |
 
 **11 — a code block loses a leading space.** This one is unrepresentable, and
 the reference says why. A directive's content indent is fixed by the first line
@@ -1596,6 +1610,60 @@ on the board.
 
 That is 1525 of 1564 trees identical, with the remainder either unrepresentable
 in reST or a model gap whose price is written down.
+
+
+### Two colons an author wrote are not the literal-block marker
+
+PEP 473 writes three:
+
+```rst
+allowing to display the following:::
+```
+
+docutils takes the last pair as the marker and keeps one of them
+(`data[:-1]`, because the character before the pair is not a space or a
+newline), so the paragraph's text ends `following::` — two colons the author
+wrote. Writing those back bare made the NEXT parse reduce them again, to one:
+a character of the document, lost once per round trip until it stabilised a
+colon short.
+
+A single backslash before the pair stops it. docutils' own lookbehind
+(`(?<!\\)(\\\\)*::$`) then fails, so there is no marker and no reduction, and
+the escape itself is removed on the way in — this package's literal-block
+cases already recorded that reading. The writer never NEEDS the trailing `::`
+to act as a marker: a `CodeBlock` is written with its own `::` or as a
+directive, never by leaning on the paragraph before it.
+
+It applies to a table CELL too, whose content reST parses as its own block
+fragment.
+
+Round trip **1525 → 1526**, `fidprobe` **1461 → 1462** — two probes that share
+no code, on one file each.
+
+The control is a single trailing colon, which is not a marker and must NOT be
+escaped: `like this:` is the commonest paragraph ending in reST. It passes with
+the fix removed, which is what makes it a control — the `:::` case used to sit
+in the same function and does not, so it was moved out and named as the second
+witness it is.
+
+### A code block's language and its class are the same thing to docutils
+
+`sphinx/doc/usage/builders/index.rst` holds a plain literal block that carries
+the class `serializinghtmlbuilder` from a `.. class::` directive above it. It
+comes back as a code block whose **language** is `serializinghtmlbuilder`.
+
+The ambiguity is the format's, not the writer's. docutils stores a code block's
+language *as a class*: `.. code:: python` with `:class: mycls` gives
+`classes=['code', 'python', 'mycls']`, and `.. code::` with `:class: mycls`
+gives `classes=['code', 'mycls']`. With one extra class the two are
+indistinguishable, and asking the reference about both spellings of the empty
+argument gives the same answer either way.
+
+Writing the block as `::` inside a `.. class::` wrapper was measured when the
+`:class:` option was chosen and is worse — the class lands twice. Guessing from
+the class NAME would be a guess. So the empty argument is simply no longer
+written as a trailing space (tidiness, not a fix), and this is named rather
+than papered over.
 
 
 ### The pair is fuzzed, and the first thing it broke was the judge
