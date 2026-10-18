@@ -311,3 +311,44 @@ func dropDanglingWrapEscape(s string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// escapeTrailingLiteralMarker escapes a "::" that ends a block of flattened
+// text, where reST reads it as the LITERAL BLOCK MARKER rather than as two
+// colons an author wrote.
+//
+// docutils' rule, ported in consumeParagraph and read from states.py:
+// "(?<!\\)(\\\\)*::$" matches, and then the text keeps ONE colon
+// ("data[:-1]") when the character before the pair is not a space or a
+// newline. So PEP 473's "allowing to display the following:::" arrives as a
+// paragraph whose text ends "following::" -- three colons in the source, two
+// in the tree -- and writing those two back bare made the NEXT parse reduce
+// them again, to one. A character of the document, lost once per round trip
+// until it stabilised a colon short.
+//
+// A single backslash before the pair is what stops it: the lookbehind fails,
+// so there is no marker and no reduction, and the escape itself is removed on
+// the way in. The package's own literal-block cases already record that
+// reading ("a single escaping backslash right before :: means only ONE real
+// colon, no literal block, no reduction").
+//
+// This writer never NEEDS the trailing "::" to act as a marker: a
+// richdoc.CodeBlock is written with its own "::" or as a directive, never by
+// leaning on the paragraph before it.
+//
+// An ODD number of backslashes already before the pair means the text itself
+// ends with an escaped backslash, where docutils' lookbehind already fails and
+// adding another would change the text.
+func escapeTrailingLiteralMarker(text string) string {
+	if !strings.HasSuffix(text, "::") {
+		return text
+	}
+	body := text[:len(text)-2]
+	n := 0
+	for n < len(body) && body[len(body)-1-n] == '\\' {
+		n++
+	}
+	if n%2 == 1 {
+		return text
+	}
+	return body + `\::`
+}

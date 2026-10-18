@@ -358,7 +358,7 @@ func (w *writer) writeBlockBody(b richdoc.Block, level int) string {
 		// rather than at the marker sites, so a paragraph that is a list
 		// item's own first block is covered too -- "- " prepended to text
 		// that itself starts with "-" is a NESTED bullet list.
-		return escapeBlockStart(w.writeInlines(n.Inlines))
+		return escapeTrailingLiteralMarker(escapeBlockStart(w.writeInlines(n.Inlines)))
 	case richdoc.List:
 		return w.writeList(n)
 	case richdoc.CodeBlock:
@@ -569,7 +569,27 @@ func writeCodeBlock(c richdoc.CodeBlock) string {
 		// class twice. A languageless block still needs the directive here,
 		// since "::" has no options at all.
 		opts := []string{":class: " + strings.Join(c.Classes, " ")}
-		return rawDirectiveSource(".. code:: "+c.Language, opts, indentBlock(c.Text))
+		header := ".. code::"
+		if c.Language != "" {
+			header += " " + c.Language
+		}
+		// And the ARGUMENT is left off entirely when there is no language,
+		// rather than written as a trailing space. Both read the same -- asked
+		// of the reference, ".. code:: \n   :class: mycls" and ".. code::\n
+		// :class: mycls" both give classes=['code','mycls'] -- so this is
+		// tidiness, not a fix.
+		//
+		// ⛔ What it does NOT fix, and cannot: docutils stores a code block's
+		// LANGUAGE as a class ("code", then the language, then the author's own
+		// classes), so a block with one class and no language comes back
+		// indistinguishable from a block whose language is that class.
+		// sphinx/doc/usage/builders/index.rst is the witness: a plain literal
+		// block carrying "serializinghtmlbuilder" from a ".. class::" directive
+		// comes back as a code block whose LANGUAGE is "serializinghtmlbuilder".
+		// The ambiguity is the format's. Writing the block as "::" inside a
+		// ".. class::" wrapper was measured and is worse -- the class lands
+		// twice -- and guessing from the class NAME would be a guess.
+		return rawDirectiveSource(header, opts, indentBlock(c.Text))
 	}
 	if c.Language == "" {
 		return "::\n\n" + indentBlock(c.Text)
@@ -827,7 +847,7 @@ func cellText(w *writer, c richdoc.Cell) string {
 	if len(c.Blocks) > 0 {
 		return w.writeBlocks(c.Blocks)
 	}
-	text := escapeBlockStart(w.writeInlines(c.Inlines))
+	text := escapeTrailingLiteralMarker(escapeBlockStart(w.writeInlines(c.Inlines)))
 	if !cellKeepsItsLines(c.Inlines) {
 		text = strings.ReplaceAll(text, "\n", " ")
 	}
