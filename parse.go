@@ -318,8 +318,11 @@ type converter struct {
 	opts         Options
 	footnoteDefs map[string]*doctree.Element
 	substDefs    map[string]*doctree.Element
-	referenced   map[string]bool
-	consumed     map[string]bool
+	// expandingSubst holds the substitution names currently being inlined, so
+	// that one reaching itself degrades instead of recursing forever.
+	expandingSubst map[string]bool
+	referenced     map[string]bool
+	consumed       map[string]bool
 	// headingAnchor maps a section's OWN id to the explicit ".. _name:"
 	// anchor written in front of it, and anchorAlias maps every id that
 	// now names the same heading -- the section's slug and any further
@@ -1447,11 +1450,58 @@ func (c *converter) convertReference(el *doctree.Element) []richdoc.Inline {
 // (no matching definition) falls back to its bare name as plain text, the
 // same fallback those writers use unconditionally.
 func (c *converter) convertSubstitutionRef(el *doctree.Element) []richdoc.Inline {
-	def, ok := c.substDefs[el.Attr("refname")]
-	if !ok {
-		return []richdoc.Inline{richdoc.Text{Value: doctree.AsText(el)}}
+	name := el.Attr("refname")
+	def, ok := c.substDefs[name]
+	// ⛔ A substitution that reaches ITSELF is a cycle, and following it was a
+	// CRASH -- "fatal error: stack overflow", which Go cannot recover from, so
+	// no caller could defend against it. Twenty-one bytes do it:
+	//
+	//	.. |a| replace:: |a|
+	//
+	//	see |a| here
+	//
+	// and so does a mutual pair (|a| -> |b| -> |a|). The reference detects the
+	// circularity and leaves the marker as text, which is what this does. The
+	// identical hazard one function below -- a footnote citing itself -- was
+	// found and guarded earlier; the same shape here was not looked at then,
+	// which is the lesson worth more than the fix.
+	//
+	// Nothing in the 1564-file corpus does it. It turned up while measuring
+	// how far a document can AMPLIFY on the way through.
+	if !ok || c.expandingSubst[name] {
+		return []richdoc.Inline{richdoc.Text{Value: substFallback(el, name)}}
 	}
-	return c.convertInlines(def.Children)
+	if c.expandingSubst == nil {
+		c.expandingSubst = map[string]bool{}
+	}
+	c.expandingSubst[name] = true
+	out := c.convertInlines(def.Children)
+	delete(c.expandingSubst, name)
+	return out
+}
+
+// substFallback is what an unresolvable substitution reference leaves behind:
+// its bare NAME, as the sibling html/latex writers do unconditionally and as
+// TestParse has pinned since before this guard existed.
+//
+// ⚠ The reference disagrees, and the difference is not this change's to make.
+// Asked about an undefined "|nowhere|" docutils answers "see |nowhere| here",
+// keeping the author's own pipes, where this gives "see nowhere here" -- a
+// WORD the author never wrote. The pinned case states the behaviour without a
+// reason beside it, so it records an observation rather than a decision, and
+// settling it means measuring the html and latex writers against the reference
+// too, not flipping it inside a crash fix. fidprobe's "substitution_reference
+// -> text" class (5 files) is where it would show.
+//
+// The inner text comes from the node, not from refname, because refname is
+// normalised to lower case and the author's spelling is what a fallback should
+// carry.
+func substFallback(el *doctree.Element, refname string) string {
+	inner := doctree.AsText(el)
+	if inner == "" {
+		inner = refname
+	}
+	return inner
 }
 
 // convertNoteRef resolves a footnote/citation reference against the

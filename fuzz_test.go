@@ -42,6 +42,14 @@ func FuzzParseWrite(f *testing.F) {
 	f.Add("+----+----+\n|         |\n+----+----+\n| a  | b  |\n+====+====+\n| c  | d  |\n+----+----+\n+ e  | f  |\n+----+----+\n")
 	f.Add("=====  =====\na      b\n=====  =====\n1      2\n=====  =====\n")
 	f.Add("a title\n=======\n\n- a list\n\n  | a line block\n  | another\n\n.. note:: a directive\n")
+	// The substitution shapes, kept as seeds because the fuzzer is unlikely to
+	// write a definition that references itself by name on its own: a cycle
+	// (which crashed the converter with "fatal error: stack overflow"), a
+	// mutual pair, and a CHAIN, which is bounded only by how many lines the
+	// author writes -- 2^n expansions, measured at 260x the input by n=16.
+	f.Add(".. |a| replace:: |a|\n\nsee |a| here\n")
+	f.Add(".. |a| replace:: |b|\n.. |b| replace:: |a|\n\nsee |a| here\n")
+	f.Add(".. |a0| replace:: x\n.. |a1| replace:: |a0| |a0|\n.. |a2| replace:: |a1| |a1|\n\nboom |a2| boom\n")
 	f.Fuzz(func(t *testing.T, src string) {
 		doc, err := Parse([]byte(src))
 		if err != nil || doc == nil {

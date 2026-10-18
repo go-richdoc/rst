@@ -1666,6 +1666,67 @@ written as a trailing space (tidiness, not a fix), and this is named rather
 than papered over.
 
 
+### Twenty-one bytes were a denial of service
+
+```rst
+.. |a| replace:: |a|
+
+see |a| here
+```
+
+A substitution's definition may reference another substitution, so resolving
+one is recursive. A definition that reaches **itself** recursed forever, and Go
+answered `fatal error: stack overflow` — which is not a panic. No `recover()`
+catches it, so a service converting a document it did not write could be killed
+by twenty-one bytes and could not defend itself. A mutual pair does it too
+(`|a|` → `|b|` → `|a|`), and so does a ring of any length.
+
+The reference detects the circularity and leaves the marker as text, which is
+what this now does, keyed on the names being expanded ON THE CURRENT PATH — so
+the same substitution used twice in one paragraph still expands twice, which is
+the control.
+
+**The identical hazard one function below was already guarded.** A footnote
+citing itself was found to be the same unbounded recursion in an earlier round
+and fixed there, and the substitution path beside it was not looked at then.
+That is the part worth more than the fix: a cycle guard is a shape, and the
+place to look for the next one is every other function that INLINES a
+definition by name.
+
+Nothing in the 1564-file corpus does any of it. It turned up while measuring
+something else — how far a document can grow on the way through — and the three
+shapes are now seeds in `FuzzParseWrite`.
+
+#### And the growth itself is unbounded, which is the format's doing
+
+Substitutions compose, so a chain doubles:
+
+```rst
+.. |a0| replace:: x
+.. |a1| replace:: |a0| |a0|
+.. |a2| replace:: |a1| |a1|
+...
+```
+
+| depth | source | text out | ratio | parse |
+|---|---|---|---|---|
+| 8 | 260 B | 521 B | 2× | 1 ms |
+| 12 | 380 B | 8.2 KB | 22× | 1 ms |
+| 14 | 442 B | 32.8 KB | 74× | 5 ms |
+| 16 | 504 B | 131 KB | 260× | 20 ms |
+
+Each two further levels quadruple both. The reference does the same — 752 bytes
+of source becomes 426,793 of pseudoxml at depth 24 — so this is reST's
+property, not a defect here, and unlike the cycle a caller CAN defend against
+it with a size or time limit of their own.
+
+A bound is nevertheless cheap to pick, because real documents are nowhere near
+it: `amplprobe`, over the 1564-file corpus, says **the widest real document
+expands 1.06×**, two files exceed 1.0× at all, and none reaches 2×. That
+number is recorded here so that whoever adds the option does not have to
+guess at its default.
+
+
 ### The pair is fuzzed, and the first thing it broke was the judge
 
 `FuzzParseWrite` drives the pipeline a caller drives — reST in, tree, reST out,
