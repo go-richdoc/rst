@@ -3,10 +3,10 @@ module github.com/go-richdoc/rst
 go 1.27.2
 
 require (
-	github.com/go-docutils/docutils v0.141.0
-	github.com/go-opentype/fonts v0.12.0
-	github.com/go-richdoc/richdoc v0.6.0
-	github.com/go-tex/engine v0.256.0
+	github.com/go-docutils/docutils v0.141.1
+	github.com/go-opentype/fonts v0.14.0
+	github.com/go-richdoc/richdoc v0.7.0
+	github.com/go-tex/engine v0.261.0
 )
 
 require (
@@ -22,7 +22,7 @@ require (
 	github.com/go-images/jpeg v0.2.0 // indirect
 	github.com/go-images/jpeg2000 v0.13.3 // indirect
 	github.com/go-images/png v0.1.0 // indirect
-	github.com/go-opentype/opentype v0.15.0 // indirect
+	github.com/go-opentype/opentype v0.16.0 // indirect
 	github.com/go-opentype/shape v0.5.0 // indirect
 	github.com/go-pdfkit/pdfkit v0.14.0 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
