@@ -34,8 +34,8 @@ github.com/go-pdfkit/pdfkit v0.14.0 h1:b9+F2UjjvdnJ8r3IFv1G4fJVIlYDnI4fEqrnmfqQD
 github.com/go-pdfkit/pdfkit v0.14.0/go.mod h1:5jbuaxXUuiGkvUyJXJoQD0kjtAMPk8hu2OYzr+jrxmY=
 github.com/go-richdoc/richdoc v0.7.0 h1:vhHypa0y26ulrOz6Aw1RIzeLjSMsFJyU1SzK5jd90lg=
 github.com/go-richdoc/richdoc v0.7.0/go.mod h1:RhxAcqwoUg1pnTYCiRdKILzOZwOmraO0dMJI4N6yY70=
-github.com/go-tex/engine v0.261.0 h1:XDz7WoL3nDEXv4EQ8RSWtOjgm4fqRaTHrZoJdu1286s=
-github.com/go-tex/engine v0.261.0/go.mod h1:Sv8FOfoGIGzev83WECr8Al5JHiyCWQ7bm3dHlhBtv18=
+github.com/go-tex/engine v0.262.0 h1:YvxzdY7enwXNLN/K1QTQ9D64uy8Yg6JYoTN59SH1/gw=
+github.com/go-tex/engine v0.262.0/go.mod h1:Sv8FOfoGIGzev83WECr8Al5JHiyCWQ7bm3dHlhBtv18=
 github.com/go-tex/math v0.50.0 h1:YHJ3LYzS45zBoPKGBkZW4+LUQkOeHP30YWLsfXGZCpo=
 github.com/go-tex/math v0.50.0/go.mod h1:cPm5juijQkhFj1MCByLF8tOfZ+UswAGUPBh+Wy6+vbw=
 github.com/go-typeset/bidi v0.3.0 h1:4fjGjejvjE2LzLNzY4si8PkVO321NcsKIiANhWT3jF4=
