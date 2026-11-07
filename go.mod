@@ -10,7 +10,7 @@ require (
 )
 
 require (
-	github.com/andybalholm/brotli v1.2.6 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/go-crdt/collab v0.77.1 // indirect
 	github.com/go-crdt/crdt v0.57.0 // indirect
