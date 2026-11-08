@@ -1,6 +1,6 @@
 module github.com/go-richdoc/rst
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/go-docutils/docutils v0.141.1
