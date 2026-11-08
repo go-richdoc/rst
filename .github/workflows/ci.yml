@@ -8,6 +8,17 @@ on:
 env:
   GOWORK: "off"
 
+# Least privilege, named rather than inherited. Reported by `wfaudit` while the
+# vulns lane below was being added: every job here declared nothing, so all of
+# them received the repository's DEFAULT token — read-only or read-write
+# depending on an organisation setting this file cannot show, which means the
+# answer to "what can a job in this repository reach" lived somewhere no
+# reviewer of this file could read. Nothing here writes: the jobs check out,
+# build, test and scan. Saying so makes the grant visible and survives the
+# default being widened later.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -60,6 +71,72 @@ jobs:
           go tool cover -func=cover.out
           pct=$(go tool cover -func=cover.out | awk '/^total:/{print $3}' | tr -d '%')
           awk -v p="$pct" 'BEGIN{exit (p+0<94.0)?1:0}'
+
+  vulns:
+    name: govulncheck, judged by vulngate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.27.3"
+      - run: go version
+      # ⛔ WHY THIS LANE EXISTS, AND WHY IT ARRIVES WITH THIS COMMIT.
+      # Measured here 2026-11-07: GO-2026-6888 — unbounded allocation while
+      # decompressing a crafted brotli stream — was reachable from this
+      # module, and not merely present among required modules. It sat in
+      # govulncheck's SYMBOL results with this trace:
+      #
+      #     pdf.WriteTo -> engine.CompileToPDF -> brotli.Reader.Read
+      #
+      # So a crafted stream reaching a PDF compile could make the process
+      # allocate without bound: the very defect class this package's readers
+      # spend their ceilings bounding, arriving through a dependency instead.
+      # #191 fixed it by REQUIRING github.com/andybalholm/brotli v1.2.7
+      # explicitly, an indirect dependency pinned on purpose.
+      #
+      # ⛔ And that is the hole this lane closes. The commit carrying this file
+      # DROPS that explicit requirement, because engine v0.271.0 brings a graph
+      # whose own brotli is v1.2.8 and `go mod tidy` removes a requirement that
+      # no longer raises the floor. That is correct today and measured
+      # (`go list -m github.com/andybalholm/brotli` -> v1.2.8, and
+      # `govulncheck ./...` -> no vulnerabilities). But NOTHING in this
+      # repository's CI asked the question: the pin was the only protection,
+      # and the one tool able to notice its removal mattering ran only when a
+      # human happened to type it. A protection whose check nobody runs is a
+      # note, not a control.
+      #
+      # ⛔ NO `set -o pipefail`, deliberately, and the `|| true` is not
+      # sloppiness: govulncheck exits non-zero over findings it has itself
+      # decided this module does not CALL, and zero over some it does. Its exit
+      # status answers a different question from the one this lane asks, which
+      # is why vulngate reads the stream instead. An unread or truncated scan
+      # is caught by the emptiness check and by vulngate, which believes a run
+      # only when it carried both a config and an SBOM — the SBOM being written
+      # only once the packages actually loaded.
+      #
+      # ⛔ --go holds the scan to the toolchain that ran it: the standard
+      # library is judged by ONE version, and a lane that silently resolved
+      # another answers about different code. Measured elsewhere in the fleet
+      # the same week: identical source reported 8 standard-library advisories
+      # under go1.27.1 and 0 under go1.27.2, so the toolchain IS the verdict.
+      #
+      # ⛔ Both tools pinned, and govulncheck NOT at @latest: an unpinned
+      # install is the one line in this file Renovate cannot keep honest, and
+      # the scanner's version decides the answer exactly as the toolchain does.
+      # v1.9.0 is the current tag; v1.1.4, which parts of this fleet still pin
+      # locally, PANICS when loading a linux build ("unexpected expr
+      # *ast.KeyValueExpr") — a crash, not an advisory, and a lane that read it
+      # as a finding would be red for the wrong reason.
+      - name: govulncheck, judged by vulngate
+        run: |
+          set -eu
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          go install github.com/go-fleettools/fleettools/cmd/vulngate@v0.85.0
+          BIN="$(go env GOPATH)/bin"
+          "$BIN/govulncheck" -format json ./... > "$RUNNER_TEMP/vuln.json" || true
+          test -s "$RUNNER_TEMP/vuln.json" || { echo "::error::govulncheck wrote nothing at all"; exit 1; }
+          "$BIN/vulngate" --go "$(go env GOVERSION)" "$RUNNER_TEMP/vuln.json"
 
   cross-build:
     runs-on: ubuntu-latest
