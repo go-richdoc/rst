@@ -5,15 +5,15 @@ go 1.27.3
 require (
 	github.com/go-docutils/docutils v0.141.1
 	github.com/go-opentype/fonts v0.14.0
-	github.com/go-richdoc/richdoc v0.7.0
-	github.com/go-tex/engine v0.271.0
+	github.com/go-richdoc/richdoc v0.9.0
+	github.com/go-tex/engine v0.275.0
 )
 
 require (
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
 	github.com/go-gfx/gfx v0.37.0 // indirect
 	github.com/go-images/jpeg2000 v0.14.0 // indirect
-	github.com/go-opentype/opentype v0.18.0 // indirect
+	github.com/go-opentype/opentype v0.20.0 // indirect
 	github.com/go-pdfkit/pdfkit v0.20.0 // indirect
 	github.com/go-simd/highway v0.0.14 // indirect
 	github.com/go-tex/math v0.50.0 // indirect
