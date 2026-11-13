@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/go-docutils/docutils v0.141.1
 	github.com/go-opentype/fonts v0.14.0
-	github.com/go-richdoc/richdoc v0.9.0
+	github.com/go-richdoc/richdoc v0.10.0
 	github.com/go-tex/engine v0.275.0
 )
 

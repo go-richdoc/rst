@@ -17,8 +17,8 @@ github.com/go-pdfkit/pdfkit v0.20.0 h1:AvIGB6abZEqeUlzXXweplAfdtSdmHjpo7GsgEMUm6
 github.com/go-pdfkit/pdfkit v0.20.0/go.mod h1:qiVyvQ/GJ2l4qb2OpWfnA7nwaZe5WedcdJCzQRkCYlA=
 github.com/go-pdfkit/reader v0.9.0 h1:4U2oZXozJl+1bRyzK90sb6pQB+Qm6dCPjBAk4c71tqU=
 github.com/go-pdfkit/reader v0.9.0/go.mod h1:EYHHREPKT/orDzlGiFPnPVPPuaRDLiAYezIr0cCFXaA=
-github.com/go-richdoc/richdoc v0.9.0 h1:t3XcDNQN+e2KrEERu6qctlYahSDZkbEGgGDeZxta3iA=
-github.com/go-richdoc/richdoc v0.9.0/go.mod h1:xsldfEfOJy3uWrzpXuz57+w915kDv5B0rPGKiqAzHQs=
+github.com/go-richdoc/richdoc v0.10.0 h1:+BsIDF1iX1QNzk96uMX6VbsVmiGwXoabFdBkI+01UBQ=
+github.com/go-richdoc/richdoc v0.10.0/go.mod h1:zZIyjS9RnUk0qC9kz1cTZsQHdbBZlKSMXWsTZOEeowc=
 github.com/go-simd/highway v0.0.14 h1:O3HPG00qgLGlrQyYBlMGyLYsuzZrqHA4+XNptPjV5gs=
 github.com/go-simd/highway v0.0.14/go.mod h1:t5XBPxqa10Lnj0frQS7Ur0JaN+/CckEmm5HXrqBDxXA=
 github.com/go-tex/engine v0.275.0 h1:tUnx7H3JdA2JidIYiVgKlnC6rkE1ACvZoRTFp2dLSPQ=
