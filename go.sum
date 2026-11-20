@@ -21,8 +21,8 @@ github.com/go-richdoc/richdoc v0.10.0 h1:+BsIDF1iX1QNzk96uMX6VbsVmiGwXoabFdBkI+0
 github.com/go-richdoc/richdoc v0.10.0/go.mod h1:zZIyjS9RnUk0qC9kz1cTZsQHdbBZlKSMXWsTZOEeowc=
 github.com/go-simd/highway v0.0.14 h1:O3HPG00qgLGlrQyYBlMGyLYsuzZrqHA4+XNptPjV5gs=
 github.com/go-simd/highway v0.0.14/go.mod h1:t5XBPxqa10Lnj0frQS7Ur0JaN+/CckEmm5HXrqBDxXA=
-github.com/go-tex/engine v0.280.0 h1:x0PRTjWSLGFtJzaWm/a0EZWgiSa+TSJ6PQXMv55KTQk=
-github.com/go-tex/engine v0.280.0/go.mod h1:+FOG14x5C9kclXKgGthJSrqnRKRaBW6N5kAEos1/yls=
+github.com/go-tex/engine v0.282.0 h1:2EhvC6zU30IDvlwr4GUUtR74CwmMPOzHs9+ruDLmQKM=
+github.com/go-tex/engine v0.282.0/go.mod h1:+FOG14x5C9kclXKgGthJSrqnRKRaBW6N5kAEos1/yls=
 github.com/go-tex/math v0.50.0 h1:YHJ3LYzS45zBoPKGBkZW4+LUQkOeHP30YWLsfXGZCpo=
 github.com/go-tex/math v0.50.0/go.mod h1:cPm5juijQkhFj1MCByLF8tOfZ+UswAGUPBh+Wy6+vbw=
 github.com/go-tex/texmf v0.7.0 h1:wT3ymo8/JxixF9S17EzmYtd5ghymIOb+9PKt4m3MPso=
