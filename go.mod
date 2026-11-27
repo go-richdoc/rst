@@ -6,18 +6,18 @@ require (
 	github.com/go-docutils/docutils v0.141.1
 	github.com/go-opentype/fonts v0.14.0
 	github.com/go-richdoc/richdoc v0.10.0
-	github.com/go-tex/engine v0.297.0
+	github.com/go-tex/engine v0.301.0
 )
 
 require (
 	github.com/dsnet/compress v0.0.2-0.20230904184137-39efe44ab707 // indirect
 	github.com/go-gfx/gfx v0.41.0 // indirect
 	github.com/go-images/jpeg2000 v0.14.0 // indirect
-	github.com/go-opentype/opentype v0.24.0 // indirect
+	github.com/go-opentype/opentype v0.25.0 // indirect
 	github.com/go-pdfkit/pdfkit v0.25.0 // indirect
 	github.com/go-pdfkit/reader v0.17.0 // indirect
 	github.com/go-simd/highway v0.0.14 // indirect
-	github.com/go-tex/math v0.50.0 // indirect
+	github.com/go-tex/math v0.51.0 // indirect
 	github.com/go-typeset/hyphenation v1.0.1 // indirect
 	github.com/go-typeset/linebreak v1.13.0 // indirect
 	github.com/tannevaled/gobig2 v0.2.0 // indirect
