@@ -13,8 +13,8 @@ github.com/go-images/jpeg2000 v0.14.0 h1:/nH3l5r95E7OkNZCfq7gmoDQvJzVAhmSw6rd2If
 github.com/go-images/jpeg2000 v0.14.0/go.mod h1:4/Pp3Jp2es5lA8/Ema8F7dFwl0vZprCj9MyznIz9Gdc=
 github.com/go-opentype/fonts v0.14.0 h1:WHw7k9gkHT1pu9B2yyvd0FWyQqn/4NKFQoKhvMYt3Mo=
 github.com/go-opentype/fonts v0.14.0/go.mod h1:od2QcmdpKo7QCqo6Jb16y4GULk+h2Hhfq6x3xfvn62Q=
-github.com/go-opentype/opentype v0.24.0 h1:tyRvk9fbh8zaqLYK0PNhzrG0f4rMQz3cp6co9WpuHv8=
-github.com/go-opentype/opentype v0.24.0/go.mod h1:xzFnB0oUWXuU1AxQl0CgtQpV8iWY7f5/RRGc9diiBZs=
+github.com/go-opentype/opentype v0.25.0 h1:F0oWSCWqwqmRxRS09Htn+BQvinrWythxigFYM692ySY=
+github.com/go-opentype/opentype v0.25.0/go.mod h1:xzFnB0oUWXuU1AxQl0CgtQpV8iWY7f5/RRGc9diiBZs=
 github.com/go-pdfkit/pdfkit v0.25.0 h1:iAJpw1fMtHiAictRtj4x5PQaODfqyN9H58hdAmkvofk=
 github.com/go-pdfkit/pdfkit v0.25.0/go.mod h1:rwawVt53wjlsZxPB9JrkxLXW3QYP/fcJJ/eD0FWUzzo=
 github.com/go-pdfkit/reader v0.17.0 h1:17MUgAowqA5G6KJQxOpLSyEgy3qeITkBRgFYA1hbRHQ=
@@ -23,10 +23,10 @@ github.com/go-richdoc/richdoc v0.10.0 h1:+BsIDF1iX1QNzk96uMX6VbsVmiGwXoabFdBkI+0
 github.com/go-richdoc/richdoc v0.10.0/go.mod h1:zZIyjS9RnUk0qC9kz1cTZsQHdbBZlKSMXWsTZOEeowc=
 github.com/go-simd/highway v0.0.14 h1:O3HPG00qgLGlrQyYBlMGyLYsuzZrqHA4+XNptPjV5gs=
 github.com/go-simd/highway v0.0.14/go.mod h1:t5XBPxqa10Lnj0frQS7Ur0JaN+/CckEmm5HXrqBDxXA=
-github.com/go-tex/engine v0.297.0 h1:DoyMVSUSPEUE1jmHPmDZyNLJG5n4q4KP8sWmo2j1xg0=
-github.com/go-tex/engine v0.297.0/go.mod h1:1Vh5K1V/i36v/+17tl70vQowRyCHD6q3F8J6bbyqCBw=
-github.com/go-tex/math v0.50.0 h1:YHJ3LYzS45zBoPKGBkZW4+LUQkOeHP30YWLsfXGZCpo=
-github.com/go-tex/math v0.50.0/go.mod h1:cPm5juijQkhFj1MCByLF8tOfZ+UswAGUPBh+Wy6+vbw=
+github.com/go-tex/engine v0.301.0 h1:i27PQP92aIDzC2N6poy+uduStfmgYRHkXH0QKoBZrFw=
+github.com/go-tex/engine v0.301.0/go.mod h1:ZsdP2vlbSnoOxHBvLvVL6+MIPj2dwGy/QTPkR74QvSQ=
+github.com/go-tex/math v0.51.0 h1:vJXcaYb5d7EpZyTyGhGEYgGB9uVWf/Rna3pHoLYG1nQ=
+github.com/go-tex/math v0.51.0/go.mod h1:cpu14hdmIjiZT1dh2FWkvbulp/mA/K34Z6xz6Ivtwyw=
 github.com/go-tex/texmf v0.9.0 h1:Kj1kkpk+umHuiSeEPH3Haj9lU8484C9aPXZ4RtgFCkU=
 github.com/go-tex/texmf v0.9.0/go.mod h1:rYtGrSQfQ/WAVRCze/tqGu+h400f5ARSdsasA2Kvo1g=
 github.com/go-typeset/hyphenation v1.0.1 h1:ce5eCamkShBajudWO+KTLB/NVIjqIKN3yzQlYlRRJf8=
